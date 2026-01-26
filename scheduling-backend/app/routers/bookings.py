@@ -1,0 +1,387 @@
+from fastapi import APIRouter, Depends, HTTPException, status, Header
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, and_
+from sqlalchemy.orm import selectinload
+from datetime import datetime, timedelta
+from typing import List, Optional
+
+from app.database import get_db
+from app.models.database_models import Booking, BookingStatus, Engineer, User, SystemConfig, Fee
+from app.schemas.schemas import BookingCreate, BookingUpdate, BookingResponse
+from app.services.auth import decode_access_token
+from app.services import microsoft_graph
+from app.services.availability import check_specific_slot_availability
+
+router = APIRouter(prefix="/bookings", tags=["Bookings"])
+
+
+async def get_current_user(authorization: str, db: AsyncSession) -> User:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing authorization")
+    
+    token = authorization.replace("Bearer ", "")
+    payload = decode_access_token(token)
+    if not payload:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+    
+    result = await db.execute(select(User).where(User.id == int(payload.get("sub"))))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+    return user
+
+
+async def get_admin_token(db: AsyncSession) -> Optional[str]:
+    result = await db.execute(
+        select(User).where(User.role == "admin", User.microsoft_access_token.isnot(None))
+    )
+    admin = result.scalar_one_or_none()
+    if admin and admin.microsoft_access_token:
+        return admin.microsoft_access_token
+    return None
+
+
+async def get_config_value(db: AsyncSession, key: str, default: str = "") -> str:
+    result = await db.execute(select(SystemConfig).where(SystemConfig.key == key))
+    config = result.scalar_one_or_none()
+    return config.value if config else default
+
+
+async def calculate_fees(
+    db: AsyncSession,
+    booking: Booking,
+    is_expedited: bool = False,
+    is_late_change: bool = False
+) -> tuple:
+    expedite_fee = 0.0
+    cancellation_fee = 0.0
+    
+    if is_expedited:
+        result = await db.execute(
+            select(Fee).where(Fee.fee_type == "expedite", Fee.is_active == True)
+        )
+        fee = result.scalar_one_or_none()
+        if fee:
+            expedite_fee = fee.amount
+    
+    if is_late_change:
+        result = await db.execute(
+            select(Fee).where(Fee.fee_type == "late_change", Fee.is_active == True)
+        )
+        fee = result.scalar_one_or_none()
+        if fee:
+            cancellation_fee = fee.amount
+    
+    return expedite_fee, cancellation_fee
+
+
+@router.post("/", response_model=BookingResponse)
+async def create_booking(
+    booking_data: BookingCreate,
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
+):
+    user = await get_current_user(authorization, db)
+    
+    result = await db.execute(
+        select(Engineer)
+        .where(Engineer.id == booking_data.engineer_id)
+        .options(selectinload(Engineer.user))
+    )
+    engineer = result.scalar_one_or_none()
+    if not engineer:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Engineer not found")
+    
+    admin_token = await get_admin_token(db)
+    
+    is_available = await check_specific_slot_availability(
+        engineer,
+        booking_data.scheduled_date,
+        booking_data.duration_hours,
+        admin_token
+    )
+    
+    if not is_available:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Selected time slot is not available"
+        )
+    
+    expedite_fee, _ = await calculate_fees(db, None, booking_data.is_expedited, False)
+    
+    new_booking = Booking(
+        order_reference=booking_data.order_reference,
+        customer_name=booking_data.customer_name,
+        booker_id=user.id,
+        engineer_id=booking_data.engineer_id,
+        product_id=booking_data.product_id,
+        change_type_id=booking_data.change_type_id,
+        scheduled_date=booking_data.scheduled_date,
+        duration_hours=booking_data.duration_hours,
+        custom_fields_data=booking_data.custom_fields_data,
+        notes=booking_data.notes,
+        additional_emails=booking_data.additional_emails,
+        expedite_fee=expedite_fee,
+        status=BookingStatus.PENDING
+    )
+    
+    db.add(new_booking)
+    await db.commit()
+    await db.refresh(new_booking)
+    
+    if admin_token and engineer.calendar_email:
+        end_time = booking_data.scheduled_date + timedelta(hours=booking_data.duration_hours)
+        event_body = f"""
+        <h2>Booking Details</h2>
+        <p><strong>Order Reference:</strong> {booking_data.order_reference}</p>
+        <p><strong>Customer:</strong> {booking_data.customer_name}</p>
+        <p><strong>Duration:</strong> {booking_data.duration_hours} hours</p>
+        <p><strong>Notes:</strong> {booking_data.notes or 'N/A'}</p>
+        """
+        
+        try:
+            event = await microsoft_graph.create_calendar_event(
+                admin_token,
+                engineer.calendar_email,
+                f"Booking: {booking_data.order_reference} - {booking_data.customer_name}",
+                booking_data.scheduled_date,
+                end_time,
+                event_body,
+                [user.email]
+            )
+            
+            if event:
+                new_booking.outlook_event_id = event.get("id")
+                new_booking.status = BookingStatus.CONFIRMED
+                await db.commit()
+        except Exception:
+            pass
+        
+        try:
+            confirmation_body = f"""
+            <h2>Booking Confirmation</h2>
+            <p>Your booking has been confirmed.</p>
+            <p><strong>Order Reference:</strong> {booking_data.order_reference}</p>
+            <p><strong>Customer:</strong> {booking_data.customer_name}</p>
+            <p><strong>Date:</strong> {booking_data.scheduled_date.strftime('%Y-%m-%d %H:%M')}</p>
+            <p><strong>Duration:</strong> {booking_data.duration_hours} hours</p>
+            <p><strong>Engineer:</strong> {engineer.user.full_name if engineer.user else 'TBD'}</p>
+            """
+            
+            await microsoft_graph.send_email(
+                admin_token,
+                [user.email],
+                f"Booking Confirmation - {booking_data.order_reference}",
+                confirmation_body
+            )
+            
+            if engineer.user:
+                await microsoft_graph.send_email(
+                    admin_token,
+                    [engineer.calendar_email],
+                    f"New Booking Assignment - {booking_data.order_reference}",
+                    confirmation_body
+                )
+        except Exception:
+            pass
+    
+    result = await db.execute(
+        select(Booking)
+        .where(Booking.id == new_booking.id)
+        .options(
+            selectinload(Booking.engineer).selectinload(Engineer.user),
+            selectinload(Booking.product),
+            selectinload(Booking.change_type)
+        )
+    )
+    booking = result.scalar_one()
+    
+    return BookingResponse.model_validate(booking)
+
+
+@router.get("/", response_model=List[BookingResponse])
+async def get_bookings(
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
+):
+    user = await get_current_user(authorization, db)
+    
+    if user.role.value == "admin":
+        query = select(Booking).options(
+            selectinload(Booking.engineer).selectinload(Engineer.user),
+            selectinload(Booking.product),
+            selectinload(Booking.change_type)
+        ).order_by(Booking.scheduled_date.desc())
+    else:
+        query = select(Booking).where(Booking.booker_id == user.id).options(
+            selectinload(Booking.engineer).selectinload(Engineer.user),
+            selectinload(Booking.product),
+            selectinload(Booking.change_type)
+        ).order_by(Booking.scheduled_date.desc())
+    
+    result = await db.execute(query)
+    bookings = result.scalars().all()
+    
+    return [BookingResponse.model_validate(b) for b in bookings]
+
+
+@router.get("/{booking_id}", response_model=BookingResponse)
+async def get_booking(
+    booking_id: int,
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
+):
+    user = await get_current_user(authorization, db)
+    
+    result = await db.execute(
+        select(Booking)
+        .where(Booking.id == booking_id)
+        .options(
+            selectinload(Booking.engineer).selectinload(Engineer.user),
+            selectinload(Booking.product),
+            selectinload(Booking.change_type)
+        )
+    )
+    booking = result.scalar_one_or_none()
+    
+    if not booking:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
+    
+    if user.role.value != "admin" and booking.booker_id != user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    
+    return BookingResponse.model_validate(booking)
+
+
+@router.patch("/{booking_id}", response_model=BookingResponse)
+async def update_booking(
+    booking_id: int,
+    update_data: BookingUpdate,
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
+):
+    user = await get_current_user(authorization, db)
+    
+    result = await db.execute(
+        select(Booking)
+        .where(Booking.id == booking_id)
+        .options(selectinload(Booking.engineer).selectinload(Engineer.user))
+    )
+    booking = result.scalar_one_or_none()
+    
+    if not booking:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
+    
+    if user.role.value != "admin" and booking.booker_id != user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    
+    if booking.status == BookingStatus.CANCELLED:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot update cancelled booking")
+    
+    deadline_hours = int(await get_config_value(db, "amendment_deadline_hours", "24"))
+    deadline = booking.scheduled_date - timedelta(hours=deadline_hours)
+    
+    is_late_change = datetime.utcnow() > deadline
+    
+    if is_late_change and user.role.value != "admin":
+        _, late_fee = await calculate_fees(db, booking, False, True)
+        booking.cancellation_fee += late_fee
+    
+    if update_data.scheduled_date:
+        booking.scheduled_date = update_data.scheduled_date
+    if update_data.duration_hours:
+        booking.duration_hours = update_data.duration_hours
+    if update_data.notes is not None:
+        booking.notes = update_data.notes
+    if update_data.custom_fields_data is not None:
+        booking.custom_fields_data = update_data.custom_fields_data
+    if update_data.additional_emails is not None:
+        booking.additional_emails = update_data.additional_emails
+    
+    admin_token = await get_admin_token(db)
+    if admin_token and booking.outlook_event_id and booking.engineer.calendar_email:
+        try:
+            end_time = booking.scheduled_date + timedelta(hours=booking.duration_hours)
+            await microsoft_graph.update_calendar_event(
+                admin_token,
+                booking.engineer.calendar_email,
+                booking.outlook_event_id,
+                start_datetime=booking.scheduled_date,
+                end_datetime=end_time
+            )
+        except Exception:
+            pass
+    
+    await db.commit()
+    await db.refresh(booking)
+    
+    result = await db.execute(
+        select(Booking)
+        .where(Booking.id == booking.id)
+        .options(
+            selectinload(Booking.engineer).selectinload(Engineer.user),
+            selectinload(Booking.product),
+            selectinload(Booking.change_type)
+        )
+    )
+    booking = result.scalar_one()
+    
+    return BookingResponse.model_validate(booking)
+
+
+@router.delete("/{booking_id}")
+async def cancel_booking(
+    booking_id: int,
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
+):
+    user = await get_current_user(authorization, db)
+    
+    result = await db.execute(
+        select(Booking)
+        .where(Booking.id == booking_id)
+        .options(selectinload(Booking.engineer))
+    )
+    booking = result.scalar_one_or_none()
+    
+    if not booking:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
+    
+    if user.role.value != "admin" and booking.booker_id != user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    
+    if booking.status == BookingStatus.CANCELLED:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Booking already cancelled")
+    
+    deadline_hours = int(await get_config_value(db, "cancellation_deadline_hours", "24"))
+    deadline = booking.scheduled_date - timedelta(hours=deadline_hours)
+    
+    is_late_cancellation = datetime.utcnow() > deadline
+    
+    if is_late_cancellation:
+        result = await db.execute(
+            select(Fee).where(Fee.fee_type == "cancellation", Fee.is_active == True)
+        )
+        fee = result.scalar_one_or_none()
+        if fee:
+            booking.cancellation_fee = fee.amount
+    
+    booking.status = BookingStatus.CANCELLED
+    
+    admin_token = await get_admin_token(db)
+    if admin_token and booking.outlook_event_id and booking.engineer.calendar_email:
+        try:
+            await microsoft_graph.delete_calendar_event(
+                admin_token,
+                booking.engineer.calendar_email,
+                booking.outlook_event_id
+            )
+        except Exception:
+            pass
+    
+    await db.commit()
+    
+    return {
+        "message": "Booking cancelled successfully",
+        "cancellation_fee": booking.cancellation_fee
+    }
