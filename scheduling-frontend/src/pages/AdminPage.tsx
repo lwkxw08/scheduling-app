@@ -16,7 +16,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Checkbox } from '../components/ui/checkbox';
 import { 
   ArrowLeft, Plus, Edit, Trash2, Users,
-  Calendar, UserCheck, Clock, Settings, Mail, CalendarDays
+  Calendar, UserCheck, Clock, Settings, Mail, CalendarDays, Upload, Loader2
 } from 'lucide-react';
 import RosterPatternBuilder from '../components/RosterPatternBuilder';
 
@@ -94,6 +94,7 @@ export default function AdminPage() {
   const [emailTemplateAdditionalEmails, setEmailTemplateAdditionalEmails] = useState('');
   const [emailTemplateLogoUrl, setEmailTemplateLogoUrl] = useState('');
   const [emailTemplateIsDefault, setEmailTemplateIsDefault] = useState(false);
+  const [isUploadingLogo, setIsUploadingLogo] = useState(false);
 
   const [showCalendarTemplateDialog, setShowCalendarTemplateDialog] = useState(false);
   const [editingCalendarTemplate, setEditingCalendarTemplate] = useState<CalendarEventTemplate | null>(null);
@@ -489,6 +490,23 @@ export default function AdminPage() {
       } catch (err: any) {
         setError(err.message);
       }
+    }
+  };
+
+  const handleLogoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setIsUploadingLogo(true);
+    try {
+      const result = await api.uploadFile(file, 'logo');
+      const fullUrl = api.getFileUrl(result.url);
+      setEmailTemplateLogoUrl(fullUrl);
+    } catch (error) {
+      console.error('Failed to upload logo:', error);
+      alert('Failed to upload logo. Please try again.');
+    } finally {
+      setIsUploadingLogo(false);
     }
   };
 
@@ -1198,13 +1216,32 @@ export default function AdminPage() {
                         <Label className="text-base font-medium">Company Branding</Label>
                         <div className="mt-3 space-y-3">
                           <div className="space-y-2">
-                            <Label>Company Logo URL</Label>
-                            <Input 
-                              value={emailTemplateLogoUrl} 
-                              onChange={(e) => setEmailTemplateLogoUrl(e.target.value)}
-                              placeholder="https://example.com/logo.png"
-                            />
-                            <p className="text-xs text-gray-500">Enter a URL to your company logo image. This will be displayed at the top of the email.</p>
+                            <Label>Company Logo</Label>
+                            <div className="flex gap-2">
+                              <Input 
+                                value={emailTemplateLogoUrl} 
+                                onChange={(e) => setEmailTemplateLogoUrl(e.target.value)}
+                                placeholder="https://example.com/logo.png"
+                                className="flex-1"
+                              />
+                              <div className="relative">
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  onChange={handleLogoUpload}
+                                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                                  disabled={isUploadingLogo}
+                                />
+                                <Button variant="outline" disabled={isUploadingLogo}>
+                                  {isUploadingLogo ? (
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                  ) : (
+                                    <Upload className="w-4 h-4" />
+                                  )}
+                                </Button>
+                              </div>
+                            </div>
+                            <p className="text-xs text-gray-500">Enter a URL or upload an image file. This will be displayed at the top of the email.</p>
                           </div>
                           {emailTemplateLogoUrl && (
                             <div className="p-3 bg-gray-50 rounded-lg border">

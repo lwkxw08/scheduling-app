@@ -473,6 +473,43 @@ class ApiService {
   async getAllRosterAssignments() {
     return this.request('/admin/roster-assignments');
   }
+
+  async uploadFile(file: File, fileType: 'logo' | 'attachment' = 'attachment'): Promise<{
+    filename: string;
+    original_filename: string;
+    file_type: string;
+    url: string;
+  }> {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('file_type', fileType);
+
+    const token = localStorage.getItem('token');
+    const headers: HeadersInit = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${API_URL}/admin/upload`, {
+      method: 'POST',
+      headers,
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Upload failed' }));
+      throw new Error(error.detail || 'Upload failed');
+    }
+
+    return response.json();
+  }
+
+  getFileUrl(relativePath: string): string {
+    if (relativePath.startsWith('http')) {
+      return relativePath;
+    }
+    return `${API_URL}${relativePath}`;
+  }
 }
 
 export const api = new ApiService();

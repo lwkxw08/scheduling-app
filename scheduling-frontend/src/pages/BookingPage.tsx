@@ -10,7 +10,7 @@ import { Textarea } from '../components/ui/textarea';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Checkbox } from '../components/ui/checkbox';
-import { Calendar, ArrowLeft, Clock, User, Check, Paperclip } from 'lucide-react';
+import { Calendar, ArrowLeft, Clock, User, Check, Paperclip, Upload, Loader2 } from 'lucide-react';
 
 export default function BookingPage() {
   const navigate = useNavigate();
@@ -44,6 +44,8 @@ export default function BookingPage() {
 
   const [engineerAttachmentUrl, setEngineerAttachmentUrl] = useState('');
   const [customerAttachmentUrl, setCustomerAttachmentUrl] = useState('');
+  const [isUploadingEngineerAttachment, setIsUploadingEngineerAttachment] = useState(false);
+  const [isUploadingCustomerAttachment, setIsUploadingCustomerAttachment] = useState(false);
 
   useEffect(() => {
     loadFormData();
@@ -129,6 +131,40 @@ export default function BookingPage() {
       setError(err.message || 'Failed to create booking');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleEngineerAttachmentUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setIsUploadingEngineerAttachment(true);
+    try {
+      const result = await api.uploadFile(file, 'attachment');
+      const fullUrl = api.getFileUrl(result.url);
+      setEngineerAttachmentUrl(fullUrl);
+    } catch (error) {
+      console.error('Failed to upload attachment:', error);
+      alert('Failed to upload attachment. Please try again.');
+    } finally {
+      setIsUploadingEngineerAttachment(false);
+    }
+  };
+
+  const handleCustomerAttachmentUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setIsUploadingCustomerAttachment(true);
+    try {
+      const result = await api.uploadFile(file, 'attachment');
+      const fullUrl = api.getFileUrl(result.url);
+      setCustomerAttachmentUrl(fullUrl);
+    } catch (error) {
+      console.error('Failed to upload attachment:', error);
+      alert('Failed to upload attachment. Please try again.');
+    } finally {
+      setIsUploadingCustomerAttachment(false);
     }
   };
 
@@ -502,28 +538,64 @@ export default function BookingPage() {
                   </p>
                   
                   <div className="space-y-2">
-                    <Label htmlFor="engineerAttachment">Engineer Attachment URL</Label>
-                    <Input
-                      id="engineerAttachment"
-                      value={engineerAttachmentUrl}
-                      onChange={(e) => setEngineerAttachmentUrl(e.target.value)}
-                      placeholder="https://example.com/engineer-document.pdf"
-                    />
+                    <Label htmlFor="engineerAttachment">Engineer Attachment</Label>
+                    <div className="flex gap-2">
+                      <Input
+                        id="engineerAttachment"
+                        value={engineerAttachmentUrl}
+                        onChange={(e) => setEngineerAttachmentUrl(e.target.value)}
+                        placeholder="https://example.com/engineer-document.pdf"
+                        className="flex-1"
+                      />
+                      <div className="relative">
+                        <input
+                          type="file"
+                          onChange={handleEngineerAttachmentUpload}
+                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                          disabled={isUploadingEngineerAttachment}
+                        />
+                        <Button variant="outline" disabled={isUploadingEngineerAttachment}>
+                          {isUploadingEngineerAttachment ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <Upload className="w-4 h-4" />
+                          )}
+                        </Button>
+                      </div>
+                    </div>
                     <p className="text-xs text-gray-500">
-                      This attachment will be included in the engineer's confirmation email (e.g., technical specifications, site access details)
+                      Enter a URL or upload a file. This attachment will be included in the engineer's confirmation email (e.g., technical specifications, site access details)
                     </p>
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="customerAttachment">Customer Attachment URL</Label>
-                    <Input
-                      id="customerAttachment"
-                      value={customerAttachmentUrl}
-                      onChange={(e) => setCustomerAttachmentUrl(e.target.value)}
-                      placeholder="https://example.com/customer-document.pdf"
-                    />
+                    <Label htmlFor="customerAttachment">Customer Attachment</Label>
+                    <div className="flex gap-2">
+                      <Input
+                        id="customerAttachment"
+                        value={customerAttachmentUrl}
+                        onChange={(e) => setCustomerAttachmentUrl(e.target.value)}
+                        placeholder="https://example.com/customer-document.pdf"
+                        className="flex-1"
+                      />
+                      <div className="relative">
+                        <input
+                          type="file"
+                          onChange={handleCustomerAttachmentUpload}
+                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                          disabled={isUploadingCustomerAttachment}
+                        />
+                        <Button variant="outline" disabled={isUploadingCustomerAttachment}>
+                          {isUploadingCustomerAttachment ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <Upload className="w-4 h-4" />
+                          )}
+                        </Button>
+                      </div>
+                    </div>
                     <p className="text-xs text-gray-500">
-                      This attachment will be included in the customer's confirmation email (e.g., service agreement, preparation instructions)
+                      Enter a URL or upload a file. This attachment will be included in the customer's confirmation email (e.g., service agreement, preparation instructions)
                     </p>
                   </div>
                 </div>

@@ -1,9 +1,13 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Header
+from fastapi import APIRouter, Depends, HTTPException, status, Header, UploadFile, File
+from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 from sqlalchemy.exc import IntegrityError
 from typing import List
+import os
+import uuid
+import aiofiles
 
 from app.database import get_db
 from app.models.database_models import (
@@ -1241,3 +1245,67 @@ async def get_all_roster_assignments(
     )
     assignments = result.scalars().all()
     return [EngineerRosterAssignmentResponse.model_validate(a) for a in assignments]
+
+
+# File upload configuration
+UPLOAD_DIR = "/data/uploads" if os.path.exists("/data") else "./uploads"
+ALLOWED_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".txt"}
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+
+
+@router.post("/upload")
+async def upload_file(
+    file: UploadFile = File(...),
+    file_type: str = "attachment",
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """Upload a file and return its URL. file_type can be 'logo' or 'attachment'"""
+    await get_admin_user(authorization, db)
+    
+    # Validate file extension
+    file_ext = os.path.splitext(file.filename)[1].lower() if file.filename else ""
+    if file_ext not in ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"File type not allowed. Allowed types: {', '.join(ALLOWED_EXTENSIONS)}"
+        )
+    
+    # Create upload directory if it doesn't exist
+    upload_subdir = os.path.join(UPLOAD_DIR, file_type)
+    os.makedirs(upload_subdir, exist_ok=True)
+    
+    # Generate unique filename
+    unique_filename = f"{uuid.uuid4()}{file_ext}"
+    file_path = os.path.join(upload_subdir, unique_filename)
+    
+    # Read and validate file size
+    contents = await file.read()
+    if len(contents) > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"File too large. Maximum size is {MAX_FILE_SIZE // (1024*1024)}MB"
+        )
+    
+    # Save file
+    async with aiofiles.open(file_path, 'wb') as f:
+        await f.write(contents)
+    
+    # Return the URL path to access the file
+    return {
+        "filename": unique_filename,
+        "original_filename": file.filename,
+        "file_type": file_type,
+        "url": f"/admin/files/{file_type}/{unique_filename}"
+    }
+
+
+@router.get("/files/{file_type}/{filename}")
+async def get_uploaded_file(file_type: str, filename: str):
+    """Serve uploaded files"""
+    file_path = os.path.join(UPLOAD_DIR, file_type, filename)
+    
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
+    
+    return FileResponse(file_path)
