@@ -403,7 +403,7 @@ async def cancel_booking(
     
     is_late_cancellation = datetime.utcnow() > deadline
     
-    if is_late_cancellation:
+    if is_late_cancellation and user.role.value != "admin":
         result = await db.execute(
             select(Fee).where(Fee.fee_type == "cancellation", Fee.is_active == True)
         )
