@@ -7,6 +7,7 @@ import BookingPage from './pages/BookingPage';
 import BookingDetailPage from './pages/BookingDetailPage';
 import AdminPage from './pages/AdminPage';
 import EngineerSkillsPage from './pages/EngineerSkillsPage';
+import EngineerDashboardPage from './pages/EngineerDashboardPage';
 
 function ProtectedRoute({ children, adminOnly = false }: { children: React.ReactNode; adminOnly?: boolean }) {
   const { isAuthenticated, isLoading, user } = useAuth();
@@ -74,6 +75,14 @@ function App() {
             element={
               <ProtectedRoute adminOnly>
                 <EngineerSkillsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/engineer-dashboard"
+            element={
+              <ProtectedRoute>
+                <EngineerDashboardPage />
               </ProtectedRoute>
             }
           />

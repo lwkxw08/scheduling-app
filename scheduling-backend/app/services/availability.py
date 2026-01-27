@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from app.models.database_models import Engineer, EngineerSkill, User, EngineerSchedule, EngineerRosterAssignment, RosterPattern, RosterPhase
+from app.models.database_models import Engineer, EngineerSkill, User, EngineerSchedule, EngineerRosterAssignment, RosterPattern, RosterPhase, EngineerUnavailability
 from app.services import microsoft_graph
 
 
@@ -99,6 +99,49 @@ async def get_engineer_schedule_for_day(
         )
     )
     return result.scalar_one_or_none()
+
+
+async def get_engineer_unavailability_for_date(
+    db: AsyncSession,
+    engineer_id: int,
+    target_date: datetime
+) -> List[EngineerUnavailability]:
+    """Get all unavailability entries for an engineer on a specific date"""
+    start_of_day = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
+    end_of_day = target_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+    
+    result = await db.execute(
+        select(EngineerUnavailability).where(
+            EngineerUnavailability.engineer_id == engineer_id,
+            EngineerUnavailability.start_datetime <= end_of_day,
+            EngineerUnavailability.end_datetime >= start_of_day
+        )
+    )
+    return result.scalars().all()
+
+
+def check_slot_unavailability(
+    slot_start: str,
+    slot_end: str,
+    unavailability_entries: List[EngineerUnavailability],
+    target_date: datetime
+) -> bool:
+    """Check if a slot overlaps with any manual unavailability entries"""
+    slot_start_hour, slot_start_min = parse_time(slot_start)
+    slot_end_hour, slot_end_min = parse_time(slot_end)
+    
+    slot_start_dt = target_date.replace(hour=slot_start_hour, minute=slot_start_min, second=0, microsecond=0)
+    slot_end_dt = target_date.replace(hour=slot_end_hour, minute=slot_end_min, second=0, microsecond=0)
+    
+    for entry in unavailability_entries:
+        entry_start = entry.start_datetime
+        entry_end = entry.end_datetime
+        
+        # Check for overlap
+        if slot_start_dt < entry_end and slot_end_dt > entry_start:
+            return True
+    
+    return False
 
 
 async def get_engineer_roster_assignment(
@@ -231,6 +274,7 @@ async def get_engineer_availability(
             start_hour, start_min = parse_time(start_time)
             end_hour, end_min = parse_time(end_time)
         else:
+            # Roster assignment exists but doesn't apply to this date - fall back to schedule
             schedule = await get_engineer_schedule_for_day(db, engineer.id, day_of_week)
             if schedule:
                 if not schedule.is_working:
@@ -245,8 +289,37 @@ async def get_engineer_availability(
                 start_hour, start_min = parse_time(schedule.start_time)
                 end_hour, end_min = parse_time(schedule.end_time)
             else:
-                start_hour, start_min = parse_time(engineer.working_hours_start)
-                end_hour, end_min = parse_time(engineer.working_hours_end)
+                # Check if engineer has ANY schedule entries
+                all_schedules_result = await db.execute(
+                    select(EngineerSchedule).where(EngineerSchedule.engineer_id == engineer.id)
+                )
+                all_schedules = all_schedules_result.scalars().all()
+                
+                if all_schedules:
+                    # Has schedule entries but none for this day - not working
+                    return {
+                        "engineer_id": engineer.id,
+                        "engineer_name": engineer.user.full_name if engineer.user else "Unknown",
+                        "calendar_email": engineer.calendar_email,
+                        "slots": [],
+                        "not_working": True,
+                        "day_name": day_names[day_of_week],
+                        "no_schedule_for_day": True
+                    }
+                else:
+                    # No schedule entries - default to Mon-Fri
+                    if day_of_week >= 5:
+                        return {
+                            "engineer_id": engineer.id,
+                            "engineer_name": engineer.user.full_name if engineer.user else "Unknown",
+                            "calendar_email": engineer.calendar_email,
+                            "slots": [],
+                            "not_working": True,
+                            "day_name": day_names[day_of_week],
+                            "weekend": True
+                        }
+                    start_hour, start_min = parse_time(engineer.working_hours_start)
+                    end_hour, end_min = parse_time(engineer.working_hours_end)
     else:
         schedule = await get_engineer_schedule_for_day(db, engineer.id, day_of_week)
         
@@ -263,12 +336,49 @@ async def get_engineer_availability(
             start_hour, start_min = parse_time(schedule.start_time)
             end_hour, end_min = parse_time(schedule.end_time)
         else:
-            start_hour, start_min = parse_time(engineer.working_hours_start)
-            end_hour, end_min = parse_time(engineer.working_hours_end)
+            # Check if engineer has ANY schedule entries - if so, no entry for this day means not working
+            all_schedules_result = await db.execute(
+                select(EngineerSchedule).where(EngineerSchedule.engineer_id == engineer.id)
+            )
+            all_schedules = all_schedules_result.scalars().all()
+            
+            if all_schedules:
+                # Engineer has schedule entries but none for this day - they're not working
+                return {
+                    "engineer_id": engineer.id,
+                    "engineer_name": engineer.user.full_name if engineer.user else "Unknown",
+                    "calendar_email": engineer.calendar_email,
+                    "slots": [],
+                    "not_working": True,
+                    "day_name": day_names[day_of_week],
+                    "no_schedule_for_day": True
+                }
+            else:
+                # No schedule entries at all - fall back to default working hours (Mon-Fri only)
+                if day_of_week >= 5:  # Saturday (5) or Sunday (6)
+                    return {
+                        "engineer_id": engineer.id,
+                        "engineer_name": engineer.user.full_name if engineer.user else "Unknown",
+                        "calendar_email": engineer.calendar_email,
+                        "slots": [],
+                        "not_working": True,
+                        "day_name": day_names[day_of_week],
+                        "weekend": True
+                    }
+                start_hour, start_min = parse_time(engineer.working_hours_start)
+                end_hour, end_min = parse_time(engineer.working_hours_end)
     
     slot_duration = int(duration_hours * 60)
     slots = generate_time_slots(start_hour, start_min, end_hour, end_min, slot_duration)
     
+    # Check manual unavailability entries FIRST (they override Outlook calendar)
+    unavailability_entries = await get_engineer_unavailability_for_date(db, engineer.id, target_date)
+    for slot in slots:
+        if check_slot_unavailability(slot["start_time"], slot["end_time"], unavailability_entries, target_date):
+            slot["is_available"] = False
+            slot["unavailable_reason"] = "manual"
+    
+    # Then check Outlook calendar (only for slots not already marked unavailable)
     if admin_access_token:
         start_of_day = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
         end_of_day = target_date.replace(hour=23, minute=59, second=59, microsecond=0)
@@ -282,8 +392,10 @@ async def get_engineer_availability(
             )
             
             for slot in slots:
-                if check_slot_overlap(slot["start_time"], slot["end_time"], events, target_date):
+                # Only check Outlook if not already marked unavailable by manual entry
+                if slot["is_available"] and check_slot_overlap(slot["start_time"], slot["end_time"], events, target_date):
                     slot["is_available"] = False
+                    slot["unavailable_reason"] = "calendar"
         except Exception:
             pass
     

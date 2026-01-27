@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from app.database import init_db
-from app.routers import auth, bookings, availability, admin
+from app.routers import auth, bookings, availability, admin, engineer
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -33,6 +33,7 @@ app.include_router(auth.router)
 app.include_router(bookings.router)
 app.include_router(availability.router)
 app.include_router(admin.router)
+app.include_router(engineer.router)
 
 @app.get("/healthz")
 async def healthz():

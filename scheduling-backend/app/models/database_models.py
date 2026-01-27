@@ -61,6 +61,7 @@ class Engineer(Base):
     bookings = relationship("Booking", back_populates="engineer")
     schedules = relationship("EngineerSchedule", back_populates="engineer", cascade="all, delete-orphan")
     roster_assignments = relationship("EngineerRosterAssignment", back_populates="engineer", cascade="all, delete-orphan")
+    unavailability_entries = relationship("EngineerUnavailability", back_populates="engineer", cascade="all, delete-orphan")
 
 
 class EngineerSchedule(Base):
@@ -165,6 +166,7 @@ class Booking(Base):
     engineer = relationship("Engineer", back_populates="bookings")
     product = relationship("Product", back_populates="bookings")
     change_type = relationship("ChangeType", back_populates="bookings")
+    status_updates = relationship("BookingStatusUpdate", back_populates="booking", cascade="all, delete-orphan")
 
 
 class SystemConfig(Base):
@@ -282,6 +284,42 @@ class EngineerRosterAssignment(Base):
 
     engineer = relationship("Engineer", back_populates="roster_assignments")
     pattern = relationship("RosterPattern", back_populates="assignments")
+
+
+class EngineerUnavailability(Base):
+    """Manual unavailability entries for engineers that override Outlook calendar"""
+    __tablename__ = "engineer_unavailability"
+
+    id = Column(Integer, primary_key=True, index=True)
+    engineer_id = Column(Integer, ForeignKey("engineers.id"), nullable=False)
+    start_datetime = Column(DateTime, nullable=False)
+    end_datetime = Column(DateTime, nullable=False)
+    reason = Column(String(500), nullable=True)
+    created_by_id = Column(Integer, ForeignKey("users.id"), nullable=False)  # Who created this entry
+    is_all_day = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    engineer = relationship("Engineer", back_populates="unavailability_entries")
+    created_by = relationship("User", foreign_keys=[created_by_id])
+
+
+class BookingStatusUpdate(Base):
+    """Status updates and notes from engineers for bookings"""
+    __tablename__ = "booking_status_updates"
+
+    id = Column(Integer, primary_key=True, index=True)
+    booking_id = Column(Integer, ForeignKey("bookings.id"), nullable=False)
+    updated_by_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    previous_status = Column(SQLEnum(BookingStatus), nullable=True)
+    new_status = Column(SQLEnum(BookingStatus), nullable=False)
+    notes = Column(Text, nullable=True)
+    issue_reported = Column(Boolean, default=False)
+    issue_description = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    booking = relationship("Booking", back_populates="status_updates")
+    updated_by = relationship("User", foreign_keys=[updated_by_id])
 
 
 class ExpediteRequest(Base):

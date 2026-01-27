@@ -209,6 +209,41 @@ export interface EngineerRosterAssignment {
   updated_at: string;
 }
 
+export interface EngineerUnavailability {
+  id: number;
+  engineer_id: number;
+  start_datetime: string;
+  end_datetime: string;
+  reason: string | null;
+  created_by_id: number;
+  is_all_day: boolean;
+  created_at: string;
+  updated_at: string;
+  created_by?: User;
+  engineer?: Engineer;
+}
+
+export interface BookingStatusUpdate {
+  id: number;
+  booking_id: number;
+  updated_by_id: number;
+  previous_status: string | null;
+  new_status: string;
+  notes: string | null;
+  issue_reported: boolean;
+  issue_description: string | null;
+  created_at: string;
+  updated_by?: User;
+}
+
+export interface EngineerDashboardStats {
+  total_bookings: number;
+  upcoming_bookings: number;
+  completed_bookings: number;
+  pending_bookings: number;
+  issues_reported: number;
+}
+
 export type ExpediteRequestStatus = 'pending' | 'approved' | 'rejected';
 
 export interface ExpediteRequest {

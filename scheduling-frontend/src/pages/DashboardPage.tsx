@@ -7,7 +7,7 @@ import { Button } from '../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { Alert, AlertDescription } from '../components/ui/alert';
-import { Calendar, Plus, Settings, LogOut, Clock, User, FileText, Shield } from 'lucide-react';
+import { Calendar, Plus, Settings, LogOut, Clock, User, FileText, Shield, Wrench } from 'lucide-react';
 
 export default function DashboardPage() {
   const navigate = useNavigate();
@@ -102,6 +102,12 @@ export default function DashboardPage() {
               </div>
             </div>
             <div className="flex items-center space-x-3">
+              {(user?.role === 'engineer' || user?.role === 'admin') && (
+                <Button variant="outline" onClick={() => navigate('/engineer-dashboard')}>
+                  <Wrench className="w-4 h-4 mr-2" />
+                  Engineer Dashboard
+                </Button>
+              )}
               {user?.role === 'admin' && (
                 <Button variant="outline" onClick={() => navigate('/admin')}>
                   <Settings className="w-4 h-4 mr-2" />

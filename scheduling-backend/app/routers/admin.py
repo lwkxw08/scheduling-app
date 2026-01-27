@@ -15,7 +15,7 @@ from app.models.database_models import (
     CustomField, SystemConfig, Fee, Booking, BookingStatus, EngineerSchedule,
     EmailTemplate, CalendarEventTemplate, TemplateType,
     RosterPattern, RosterPhase, EngineerRosterAssignment,
-    ExpediteRequest, ExpediteRequestStatus
+    ExpediteRequest, ExpediteRequestStatus, EngineerUnavailability, BookingStatusUpdate
 )
 from app.schemas.schemas import (
     ProductCreate, ProductUpdate, ProductResponse, ChangeTypeCreate, ChangeTypeResponse,
@@ -28,7 +28,8 @@ from app.schemas.schemas import (
     RosterPatternCreate, RosterPatternUpdate, RosterPatternResponse,
     RosterPhaseCreate, RosterPhaseResponse, RosterPatternListResponse,
     EngineerRosterAssignmentCreate, EngineerRosterAssignmentResponse,
-    ExpediteRequestCreate, ExpediteRequestApprove, ExpediteRequestReject, ExpediteRequestResponse
+    ExpediteRequestCreate, ExpediteRequestApprove, ExpediteRequestReject, ExpediteRequestResponse,
+    EngineerUnavailabilityCreate, EngineerUnavailabilityResponse
 )
 from app.services.auth import decode_access_token
 
@@ -1761,3 +1762,92 @@ async def get_revenue_summary_report(
         "approved_expedite_requests": expedite_row[0] or 0,
         "expedite_request_fees": float(expedite_row[1] or 0),
     }
+
+
+# ==================== Engineer Unavailability Management ====================
+
+@router.get("/engineers/{engineer_id}/unavailability", response_model=List[EngineerUnavailabilityResponse])
+async def get_engineer_unavailability(
+    engineer_id: int,
+    db: AsyncSession = Depends(get_db),
+    admin_user: User = Depends(get_admin_user)
+):
+    """Get all unavailability entries for an engineer"""
+    result = await db.execute(
+        select(EngineerUnavailability)
+        .options(selectinload(EngineerUnavailability.created_by))
+        .where(EngineerUnavailability.engineer_id == engineer_id)
+        .order_by(EngineerUnavailability.start_datetime)
+    )
+    return result.scalars().all()
+
+
+@router.post("/engineers/{engineer_id}/unavailability", response_model=EngineerUnavailabilityResponse)
+async def create_engineer_unavailability(
+    engineer_id: int,
+    unavailability: EngineerUnavailabilityCreate,
+    db: AsyncSession = Depends(get_db),
+    admin_user: User = Depends(get_admin_user)
+):
+    """Create an unavailability entry for any engineer (admin only)"""
+    # Verify engineer exists
+    engineer_result = await db.execute(select(Engineer).where(Engineer.id == engineer_id))
+    engineer = engineer_result.scalar_one_or_none()
+    if not engineer:
+        raise HTTPException(status_code=404, detail="Engineer not found")
+    
+    db_unavailability = EngineerUnavailability(
+        engineer_id=engineer_id,
+        start_datetime=unavailability.start_datetime,
+        end_datetime=unavailability.end_datetime,
+        reason=unavailability.reason,
+        created_by_id=admin_user.id,
+        is_all_day=unavailability.is_all_day
+    )
+    db.add(db_unavailability)
+    await db.commit()
+    await db.refresh(db_unavailability)
+    
+    # Load the created_by relationship
+    result = await db.execute(
+        select(EngineerUnavailability)
+        .options(selectinload(EngineerUnavailability.created_by))
+        .where(EngineerUnavailability.id == db_unavailability.id)
+    )
+    return result.scalar_one()
+
+
+@router.delete("/unavailability/{unavailability_id}")
+async def delete_unavailability(
+    unavailability_id: int,
+    db: AsyncSession = Depends(get_db),
+    admin_user: User = Depends(get_admin_user)
+):
+    """Delete any unavailability entry (admin only)"""
+    result = await db.execute(
+        select(EngineerUnavailability).where(EngineerUnavailability.id == unavailability_id)
+    )
+    unavailability = result.scalar_one_or_none()
+    if not unavailability:
+        raise HTTPException(status_code=404, detail="Unavailability entry not found")
+    
+    await db.delete(unavailability)
+    await db.commit()
+    return {"message": "Unavailability entry deleted"}
+
+
+@router.get("/all-unavailability", response_model=List[EngineerUnavailabilityResponse])
+async def get_all_unavailability(
+    db: AsyncSession = Depends(get_db),
+    admin_user: User = Depends(get_admin_user)
+):
+    """Get all unavailability entries for all engineers"""
+    result = await db.execute(
+        select(EngineerUnavailability)
+        .options(
+            selectinload(EngineerUnavailability.created_by),
+            selectinload(EngineerUnavailability.engineer).selectinload(Engineer.user)
+        )
+        .order_by(EngineerUnavailability.start_datetime)
+    )
+    return result.scalars().all()

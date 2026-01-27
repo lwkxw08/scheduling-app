@@ -614,6 +614,81 @@ class ApiService {
     if (filters.end_date) params.append('end_date', filters.end_date);
     return this.request(`/admin/reports/revenue-summary?${params.toString()}`);
   }
+
+  // Engineer Dashboard Methods
+  async getEngineerProfile() {
+    return this.request('/engineer/profile');
+  }
+
+  async getEngineerDashboardStats() {
+    return this.request('/engineer/dashboard/stats');
+  }
+
+  async getEngineerBookings(upcomingOnly: boolean = false) {
+    const params = upcomingOnly ? '?upcoming_only=true' : '';
+    return this.request(`/engineer/bookings${params}`);
+  }
+
+  async getEngineerBookingDetails(bookingId: number) {
+    return this.request(`/engineer/bookings/${bookingId}`);
+  }
+
+  async updateBookingStatus(bookingId: number, data: {
+    new_status: string;
+    notes?: string;
+    issue_reported?: boolean;
+    issue_description?: string;
+  }) {
+    return this.request(`/engineer/bookings/${bookingId}/status`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getEngineerUnavailability() {
+    return this.request('/engineer/unavailability');
+  }
+
+  async createEngineerUnavailability(data: {
+    start_datetime: string;
+    end_datetime: string;
+    reason?: string;
+    is_all_day?: boolean;
+  }) {
+    return this.request('/engineer/unavailability', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteEngineerUnavailability(entryId: number) {
+    return this.request(`/engineer/unavailability/${entryId}`, { method: 'DELETE' });
+  }
+
+  // Admin Unavailability Management
+  async getAdminEngineerUnavailability(engineerId: number) {
+    return this.request(`/admin/engineers/${engineerId}/unavailability`);
+  }
+
+  async createAdminEngineerUnavailability(engineerId: number, data: {
+    start_datetime: string;
+    end_datetime: string;
+    reason?: string;
+    is_all_day?: boolean;
+  }) {
+    return this.request(`/admin/engineers/${engineerId}/unavailability`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteAdminUnavailability(unavailabilityId: number) {
+    return this.request(`/admin/unavailability/${unavailabilityId}`, { method: 'DELETE' });
+  }
+
+  async getAllUnavailability() {
+    return this.request('/admin/all-unavailability');
+  }
 }
 
 export const api = new ApiService();

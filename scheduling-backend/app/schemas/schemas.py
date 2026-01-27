@@ -553,3 +553,62 @@ class ExpediteRequestResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# Engineer Unavailability Schemas
+class EngineerUnavailabilityCreate(BaseModel):
+    engineer_id: int
+    start_datetime: datetime
+    end_datetime: datetime
+    reason: Optional[str] = None
+    is_all_day: bool = False
+
+
+class EngineerUnavailabilityResponse(BaseModel):
+    id: int
+    engineer_id: int
+    start_datetime: datetime
+    end_datetime: datetime
+    reason: Optional[str]
+    created_by_id: int
+    is_all_day: bool
+    created_at: datetime
+    updated_at: datetime
+    engineer: Optional[EngineerResponse] = None
+    created_by: Optional[UserResponse] = None
+
+    class Config:
+        from_attributes = True
+
+
+# Booking Status Update Schemas
+class BookingStatusUpdateCreate(BaseModel):
+    new_status: BookingStatus
+    notes: Optional[str] = None
+    issue_reported: bool = False
+    issue_description: Optional[str] = None
+
+
+class BookingStatusUpdateResponse(BaseModel):
+    id: int
+    booking_id: int
+    updated_by_id: int
+    previous_status: Optional[BookingStatus]
+    new_status: BookingStatus
+    notes: Optional[str]
+    issue_reported: bool
+    issue_description: Optional[str]
+    created_at: datetime
+    updated_by: Optional[UserResponse] = None
+
+    class Config:
+        from_attributes = True
+
+
+# Engineer Dashboard Stats
+class EngineerDashboardStats(BaseModel):
+    total_bookings: int
+    upcoming_bookings: int
+    completed_bookings: int
+    pending_bookings: int
+    issues_reported: int
