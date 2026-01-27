@@ -315,14 +315,16 @@ export function RichTextEditor({ content, onChange, placeholder, className }: Ri
   }, [content, editor]);
 
   return (
-    <div className={`border rounded-lg overflow-hidden ${className || ''}`}>
+    <div className={`border rounded-lg overflow-hidden relative ${className || ''}`}>
       <MenuBar editor={editor} />
-      <EditorContent editor={editor} />
-      {!content && placeholder && (
-        <div className="absolute top-12 left-4 text-gray-400 pointer-events-none">
-          {placeholder}
-        </div>
-      )}
+      <div className="relative">
+        <EditorContent editor={editor} />
+        {!content && placeholder && (
+          <div className="absolute top-4 left-4 text-gray-400 pointer-events-none">
+            {placeholder}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
