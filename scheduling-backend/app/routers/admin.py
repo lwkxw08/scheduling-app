@@ -862,6 +862,223 @@ async def delete_email_template(
     return {"message": "Template deleted successfully"}
 
 
+@router.post("/email-templates/{template_id}/preview")
+async def preview_email_template(
+    template_id: int,
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """Preview an email template with sample booking data"""
+    await get_admin_user(authorization, db)
+    
+    result = await db.execute(select(EmailTemplate).where(EmailTemplate.id == template_id))
+    template = result.scalar_one_or_none()
+    if not template:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Template not found")
+    
+    # Sample data for preview
+    sample_data = {
+        "{{order_reference}}": "ORD-2024-001",
+        "{{customer_name}}": "John Smith",
+        "{{scheduled_date}}": "Monday, January 27, 2025",
+        "{{scheduled_time}}": "09:00 AM",
+        "{{duration_hours}}": "2",
+        "{{product_name}}": "Premium Service",
+        "{{change_type}}": "Installation",
+        "{{engineer_name}}": "Jane Engineer",
+        "{{engineer_email}}": "jane.engineer@company.com",
+        "{{booker_name}}": "Admin User",
+        "{{booker_email}}": "admin@company.com",
+        "{{booking_status}}": "Confirmed",
+        "{{notes}}": "Please bring ID for verification",
+        "{{cancellation_fee}}": "50.00",
+        "{{expedite_fee}}": "75.00",
+    }
+    
+    # Replace placeholders in subject and body
+    preview_subject = template.subject
+    preview_body = template.body_html
+    
+    for placeholder, value in sample_data.items():
+        preview_subject = preview_subject.replace(placeholder, value)
+        preview_body = preview_body.replace(placeholder, value)
+    
+    # Build full HTML email with logo if present
+    full_html = ""
+    if template.logo_url:
+        full_html = f'<div style="text-align: center; margin-bottom: 20px;"><img src="{template.logo_url}" alt="Company Logo" style="max-width: 200px; max-height: 100px;"></div>'
+    full_html += preview_body
+    
+    return {
+        "subject": preview_subject,
+        "body_html": full_html,
+        "logo_url": template.logo_url,
+        "send_to_engineer": template.send_to_engineer,
+        "send_to_customer": template.send_to_customer,
+        "additional_emails": template.additional_emails
+    }
+
+
+@router.post("/email-templates/preview-custom")
+async def preview_custom_email(
+    subject: str,
+    body_html: str,
+    logo_url: str = None,
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """Preview a custom email template (before saving) with sample booking data"""
+    await get_admin_user(authorization, db)
+    
+    # Sample data for preview
+    sample_data = {
+        "{{order_reference}}": "ORD-2024-001",
+        "{{customer_name}}": "John Smith",
+        "{{scheduled_date}}": "Monday, January 27, 2025",
+        "{{scheduled_time}}": "09:00 AM",
+        "{{duration_hours}}": "2",
+        "{{product_name}}": "Premium Service",
+        "{{change_type}}": "Installation",
+        "{{engineer_name}}": "Jane Engineer",
+        "{{engineer_email}}": "jane.engineer@company.com",
+        "{{booker_name}}": "Admin User",
+        "{{booker_email}}": "admin@company.com",
+        "{{booking_status}}": "Confirmed",
+        "{{notes}}": "Please bring ID for verification",
+        "{{cancellation_fee}}": "50.00",
+        "{{expedite_fee}}": "75.00",
+    }
+    
+    # Replace placeholders in subject and body
+    preview_subject = subject
+    preview_body = body_html
+    
+    for placeholder, value in sample_data.items():
+        preview_subject = preview_subject.replace(placeholder, value)
+        preview_body = preview_body.replace(placeholder, value)
+    
+    # Build full HTML email with logo if present
+    full_html = ""
+    if logo_url:
+        full_html = f'<div style="text-align: center; margin-bottom: 20px;"><img src="{logo_url}" alt="Company Logo" style="max-width: 200px; max-height: 100px;"></div>'
+    full_html += preview_body
+    
+    return {
+        "subject": preview_subject,
+        "body_html": full_html
+    }
+
+
+@router.post("/smtp/test")
+async def test_smtp_connection(
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """Test SMTP connection with current settings"""
+    await get_admin_user(authorization, db)
+    
+    # Get SMTP settings from system config
+    smtp_configs = {}
+    for key in ['smtp_host', 'smtp_port', 'smtp_username', 'smtp_password', 'smtp_from_email', 'smtp_use_tls']:
+        result = await db.execute(select(SystemConfig).where(SystemConfig.key == key))
+        config = result.scalar_one_or_none()
+        if config:
+            smtp_configs[key] = config.value
+    
+    if not smtp_configs.get('smtp_host') or not smtp_configs.get('smtp_port'):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="SMTP host and port are required")
+    
+    import smtplib
+    from email.mime.text import MIMEText
+    
+    try:
+        port = int(smtp_configs.get('smtp_port', 587))
+        use_tls = smtp_configs.get('smtp_use_tls', 'true').lower() == 'true'
+        
+        if use_tls:
+            server = smtplib.SMTP(smtp_configs['smtp_host'], port)
+            server.starttls()
+        else:
+            server = smtplib.SMTP(smtp_configs['smtp_host'], port)
+        
+        if smtp_configs.get('smtp_username') and smtp_configs.get('smtp_password'):
+            server.login(smtp_configs['smtp_username'], smtp_configs['smtp_password'])
+        
+        server.quit()
+        return {"success": True, "message": "SMTP connection successful"}
+    except Exception as e:
+        return {"success": False, "message": f"SMTP connection failed: {str(e)}"}
+
+
+@router.post("/smtp/send-test-email")
+async def send_test_email(
+    to_email: str,
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """Send a test email using SMTP settings"""
+    await get_admin_user(authorization, db)
+    
+    # Get SMTP settings from system config
+    smtp_configs = {}
+    for key in ['smtp_host', 'smtp_port', 'smtp_username', 'smtp_password', 'smtp_from_email', 'smtp_use_tls', 'smtp_from_name']:
+        result = await db.execute(select(SystemConfig).where(SystemConfig.key == key))
+        config = result.scalar_one_or_none()
+        if config:
+            smtp_configs[key] = config.value
+    
+    if not smtp_configs.get('smtp_host') or not smtp_configs.get('smtp_port'):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="SMTP host and port are required")
+    
+    if not smtp_configs.get('smtp_from_email'):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="SMTP from email is required")
+    
+    import smtplib
+    from email.mime.text import MIMEText
+    from email.mime.multipart import MIMEMultipart
+    
+    try:
+        msg = MIMEMultipart('alternative')
+        msg['Subject'] = 'Test Email from Scheduling App'
+        msg['From'] = f"{smtp_configs.get('smtp_from_name', 'Scheduling App')} <{smtp_configs['smtp_from_email']}>"
+        msg['To'] = to_email
+        
+        text_content = "This is a test email from your Scheduling App. If you received this, your SMTP settings are working correctly!"
+        html_content = """
+        <html>
+        <body style="font-family: Arial, sans-serif; padding: 20px;">
+            <h2 style="color: #4F46E5;">Test Email from Scheduling App</h2>
+            <p>This is a test email from your Scheduling App.</p>
+            <p style="color: #22C55E; font-weight: bold;">If you received this, your SMTP settings are working correctly!</p>
+            <hr style="border: 1px solid #E5E7EB; margin: 20px 0;">
+            <p style="color: #6B7280; font-size: 12px;">This email was sent as a test from the admin panel.</p>
+        </body>
+        </html>
+        """
+        
+        msg.attach(MIMEText(text_content, 'plain'))
+        msg.attach(MIMEText(html_content, 'html'))
+        
+        port = int(smtp_configs.get('smtp_port', 587))
+        use_tls = smtp_configs.get('smtp_use_tls', 'true').lower() == 'true'
+        
+        if use_tls:
+            server = smtplib.SMTP(smtp_configs['smtp_host'], port)
+            server.starttls()
+        else:
+            server = smtplib.SMTP(smtp_configs['smtp_host'], port)
+        
+        if smtp_configs.get('smtp_username') and smtp_configs.get('smtp_password'):
+            server.login(smtp_configs['smtp_username'], smtp_configs['smtp_password'])
+        
+        server.sendmail(smtp_configs['smtp_from_email'], to_email, msg.as_string())
+        server.quit()
+        
+        return {"success": True, "message": f"Test email sent successfully to {to_email}"}
+    except Exception as e:
+        return {"success": False, "message": f"Failed to send test email: {str(e)}"}
+
+
 # Calendar Event Template Endpoints
 @router.post("/calendar-templates", response_model=CalendarEventTemplateResponse)
 async def create_calendar_template(

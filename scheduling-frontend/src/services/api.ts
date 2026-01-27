@@ -689,6 +689,34 @@ class ApiService {
   async getAllUnavailability() {
     return this.request('/admin/all-unavailability');
   }
+
+  // Email Preview and SMTP Methods
+  async previewEmailTemplate(templateId: number) {
+    return this.request<{
+      subject: string;
+      body_html: string;
+      logo_url?: string;
+      send_to_engineer: boolean;
+      send_to_customer: boolean;
+      additional_emails?: string[];
+    }>(`/admin/email-templates/${templateId}/preview`, { method: 'POST' });
+  }
+
+  async previewCustomEmail(subject: string, bodyHtml: string, logoUrl?: string) {
+    const params = new URLSearchParams();
+    params.append('subject', subject);
+    params.append('body_html', bodyHtml);
+    if (logoUrl) params.append('logo_url', logoUrl);
+    return this.request<{ subject: string; body_html: string }>(`/admin/email-templates/preview-custom?${params.toString()}`, { method: 'POST' });
+  }
+
+  async testSmtpConnection() {
+    return this.request<{ success: boolean; message: string }>('/admin/smtp/test', { method: 'POST' });
+  }
+
+  async sendTestEmail(toEmail: string) {
+    return this.request<{ success: boolean; message: string }>(`/admin/smtp/send-test-email?to_email=${encodeURIComponent(toEmail)}`, { method: 'POST' });
+  }
 }
 
 export const api = new ApiService();

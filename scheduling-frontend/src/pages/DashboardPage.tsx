@@ -1,24 +1,37 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../services/api';
-import { Booking } from '../types';
+import { Booking, Product, Engineer } from '../types';
 import { Button } from '../components/ui/button';
+import { Input } from '../components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { Alert, AlertDescription } from '../components/ui/alert';
-import { Calendar, Plus, Settings, LogOut, Clock, User, FileText, Shield, Wrench } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
+import { Calendar, Plus, Settings, LogOut, Clock, User, FileText, Shield, Wrench, Search, X } from 'lucide-react';
 
 export default function DashboardPage() {
   const navigate = useNavigate();
   const { user, logout, setAuthFromToken } = useAuth();
   const [bookings, setBookings] = useState<Booking[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [engineers, setEngineers] = useState<Engineer[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showAdminSetup, setShowAdminSetup] = useState(false);
   const [isPromoting, setIsPromoting] = useState(false);
 
+  // Search and filter state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [productFilter, setProductFilter] = useState<string>('all');
+  const [engineerFilter, setEngineerFilter] = useState<string>('all');
+  const [dateFromFilter, setDateFromFilter] = useState('');
+  const [dateToFilter, setDateToFilter] = useState('');
+
   useEffect(() => {
     loadBookings();
+    loadFiltersData();
     checkAdminSetup();
   }, []);
 
@@ -48,16 +61,87 @@ export default function DashboardPage() {
     }
   };
 
-  const loadBookings = async () => {
-    try {
-      const data = await api.getBookings() as Booking[];
-      setBookings(data);
-    } catch (error) {
-      console.error('Failed to load bookings:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+    const loadBookings = async () => {
+      try {
+        const data = await api.getBookings() as Booking[];
+        setBookings(data);
+      } catch (error) {
+        console.error('Failed to load bookings:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    const loadFiltersData = async () => {
+      try {
+        const [productsData, engineersData] = await Promise.all([
+          api.getProducts(),
+          api.getEngineers(),
+        ]);
+        setProducts(productsData as Product[]);
+        setEngineers(engineersData as Engineer[]);
+      } catch (error) {
+        console.error('Failed to load filter data:', error);
+      }
+    };
+
+    const clearFilters = () => {
+      setSearchQuery('');
+      setStatusFilter('all');
+      setProductFilter('all');
+      setEngineerFilter('all');
+      setDateFromFilter('');
+      setDateToFilter('');
+    };
+
+    const hasActiveFilters = searchQuery || statusFilter !== 'all' || productFilter !== 'all' || engineerFilter !== 'all' || dateFromFilter || dateToFilter;
+
+    // Filter bookings based on search and filters
+    const filteredBookings = useMemo(() => {
+      return bookings.filter(booking => {
+        // Search filter
+        if (searchQuery) {
+          const query = searchQuery.toLowerCase();
+          const matchesSearch = 
+            booking.order_reference?.toLowerCase().includes(query) ||
+            booking.customer_name?.toLowerCase().includes(query) ||
+            booking.engineer?.user?.full_name?.toLowerCase().includes(query) ||
+            booking.product?.name?.toLowerCase().includes(query);
+          if (!matchesSearch) return false;
+        }
+
+        // Status filter
+        if (statusFilter !== 'all' && booking.status !== statusFilter) {
+          return false;
+        }
+
+        // Product filter
+        if (productFilter !== 'all' && booking.product_id?.toString() !== productFilter) {
+          return false;
+        }
+
+        // Engineer filter
+        if (engineerFilter !== 'all' && booking.engineer_id?.toString() !== engineerFilter) {
+          return false;
+        }
+
+        // Date range filter
+        if (dateFromFilter) {
+          const bookingDate = new Date(booking.scheduled_date);
+          const fromDate = new Date(dateFromFilter);
+          if (bookingDate < fromDate) return false;
+        }
+
+        if (dateToFilter) {
+          const bookingDate = new Date(booking.scheduled_date);
+          const toDate = new Date(dateToFilter);
+          toDate.setHours(23, 59, 59, 999);
+          if (bookingDate > toDate) return false;
+        }
+
+        return true;
+      });
+    }, [bookings, searchQuery, statusFilter, productFilter, engineerFilter, dateFromFilter, dateToFilter]);
 
   const handleLogout = () => {
     logout();
@@ -79,13 +163,13 @@ export default function DashboardPage() {
     }
   };
 
-  const upcomingBookings = bookings.filter(
-    (b) => b.status !== 'cancelled' && new Date(b.scheduled_date) >= new Date()
-  );
+    const upcomingBookings = filteredBookings.filter(
+      (b) => b.status !== 'cancelled' && new Date(b.scheduled_date) >= new Date()
+    );
 
-  const pastBookings = bookings.filter(
-    (b) => b.status === 'cancelled' || new Date(b.scheduled_date) < new Date()
-  );
+    const pastBookings = filteredBookings.filter(
+      (b) => b.status === 'cancelled' || new Date(b.scheduled_date) < new Date()
+    );
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -151,6 +235,108 @@ export default function DashboardPage() {
           </Button>
         </div>
 
+        {/* Search and Filter Section */}
+        <Card className="mb-6">
+          <CardContent className="pt-6">
+            <div className="space-y-4">
+              {/* Search Bar */}
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                <Input
+                  placeholder="Search by order reference, customer name, engineer, or product..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+
+              {/* Filter Row */}
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
+                <div>
+                  <label className="text-sm font-medium text-gray-700 mb-1 block">Status</label>
+                  <Select value={statusFilter} onValueChange={setStatusFilter}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="All Statuses" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Statuses</SelectItem>
+                      <SelectItem value="pending">Pending</SelectItem>
+                      <SelectItem value="confirmed">Confirmed</SelectItem>
+                      <SelectItem value="completed">Completed</SelectItem>
+                      <SelectItem value="cancelled">Cancelled</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium text-gray-700 mb-1 block">Product</label>
+                  <Select value={productFilter} onValueChange={setProductFilter}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="All Products" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Products</SelectItem>
+                      {products.map((product) => (
+                        <SelectItem key={product.id} value={product.id.toString()}>
+                          {product.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium text-gray-700 mb-1 block">Engineer</label>
+                  <Select value={engineerFilter} onValueChange={setEngineerFilter}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="All Engineers" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Engineers</SelectItem>
+                      {engineers.map((engineer) => (
+                        <SelectItem key={engineer.id} value={engineer.id.toString()}>
+                          {engineer.user?.full_name || engineer.calendar_email}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium text-gray-700 mb-1 block">From Date</label>
+                  <Input
+                    type="date"
+                    value={dateFromFilter}
+                    onChange={(e) => setDateFromFilter(e.target.value)}
+                  />
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium text-gray-700 mb-1 block">To Date</label>
+                  <Input
+                    type="date"
+                    value={dateToFilter}
+                    onChange={(e) => setDateToFilter(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              {/* Clear Filters and Results Count */}
+              <div className="flex justify-between items-center">
+                <p className="text-sm text-gray-500">
+                  Showing {filteredBookings.length} of {bookings.length} bookings
+                </p>
+                {hasActiveFilters && (
+                  <Button variant="outline" size="sm" onClick={clearFilters}>
+                    <X className="w-4 h-4 mr-1" />
+                    Clear Filters
+                  </Button>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
         {isLoading ? (
           <div className="text-center py-12">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mx-auto"></div>
@@ -165,6 +351,18 @@ export default function DashboardPage() {
               <Button onClick={() => navigate('/book')}>
                 <Plus className="w-4 h-4 mr-2" />
                 Create Booking
+              </Button>
+            </CardContent>
+          </Card>
+        ) : filteredBookings.length === 0 ? (
+          <Card>
+            <CardContent className="py-12 text-center">
+              <Search className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-gray-900 mb-2">No bookings match your filters</h3>
+              <p className="text-gray-500 mb-4">Try adjusting your search or filter criteria</p>
+              <Button variant="outline" onClick={clearFilters}>
+                <X className="w-4 h-4 mr-2" />
+                Clear All Filters
               </Button>
             </CardContent>
           </Card>

@@ -19,6 +19,7 @@ import {
   Calendar, UserCheck, Clock, Settings, Mail, CalendarDays, Upload, Loader2, AlertCircle, Download, BarChart3, FileSpreadsheet
 } from 'lucide-react';
 import RosterPatternBuilder from '../components/RosterPatternBuilder';
+import { RichTextEditor } from '../components/RichTextEditor';
 import * as XLSX from 'xlsx';
 
 export default function AdminPage() {
@@ -142,6 +143,25 @@ export default function AdminPage() {
   const [rejectAdminNotes, setRejectAdminNotes] = useState('');
   const [isProcessingExpedite, setIsProcessingExpedite] = useState(false);
 
+  // SMTP Configuration state
+  const [smtpHost, setSmtpHost] = useState('');
+  const [smtpPort, setSmtpPort] = useState('587');
+  const [smtpUsername, setSmtpUsername] = useState('');
+  const [smtpPassword, setSmtpPassword] = useState('');
+  const [smtpFromEmail, setSmtpFromEmail] = useState('');
+  const [smtpFromName, setSmtpFromName] = useState('');
+  const [smtpUseTls, setSmtpUseTls] = useState(true);
+  const [isSavingSmtp, setIsSavingSmtp] = useState(false);
+  const [smtpStatus, setSmtpStatus] = useState('');
+  const [testEmailAddress, setTestEmailAddress] = useState('');
+  const [isSendingTestEmail, setIsSendingTestEmail] = useState(false);
+
+  // Email Preview state
+  const [showEmailPreviewDialog, setShowEmailPreviewDialog] = useState(false);
+  const [emailPreviewSubject, setEmailPreviewSubject] = useState('');
+  const [emailPreviewBody, setEmailPreviewBody] = useState('');
+  const [isLoadingPreview, setIsLoadingPreview] = useState(false);
+
   useEffect(() => {
     if (user?.role !== 'admin') {
       navigate('/dashboard');
@@ -191,6 +211,21 @@ export default function AdminPage() {
       if (spListId) setSharepointListId(spListId.value);
       if (msClientId) setMicrosoftClientId(msClientId.value);
       if (msTenantId) setMicrosoftTenantId(msTenantId.value);
+
+      // Load SMTP settings
+      const smtpHostConfig = configsList.find(c => c.key === 'smtp_host');
+      const smtpPortConfig = configsList.find(c => c.key === 'smtp_port');
+      const smtpUsernameConfig = configsList.find(c => c.key === 'smtp_username');
+      const smtpFromEmailConfig = configsList.find(c => c.key === 'smtp_from_email');
+      const smtpFromNameConfig = configsList.find(c => c.key === 'smtp_from_name');
+      const smtpUseTlsConfig = configsList.find(c => c.key === 'smtp_use_tls');
+      
+      if (smtpHostConfig) setSmtpHost(smtpHostConfig.value);
+      if (smtpPortConfig) setSmtpPort(smtpPortConfig.value);
+      if (smtpUsernameConfig) setSmtpUsername(smtpUsernameConfig.value);
+      if (smtpFromEmailConfig) setSmtpFromEmail(smtpFromEmailConfig.value);
+      if (smtpFromNameConfig) setSmtpFromName(smtpFromNameConfig.value);
+      if (smtpUseTlsConfig) setSmtpUseTls(smtpUseTlsConfig.value === 'true');
     } catch (err: any) {
       setError(err.message || 'Failed to load data');
     } finally {
@@ -392,6 +427,88 @@ export default function AdminPage() {
       setSharepointStatus('Failed to save configuration');
     } finally {
       setIsSavingSharepoint(false);
+    }
+  };
+
+  const handleSaveSmtpConfig = async () => {
+    setIsSavingSmtp(true);
+    setSmtpStatus('');
+    try {
+      await Promise.all([
+        api.setSystemConfig('smtp_host', smtpHost, 'SMTP server hostname'),
+        api.setSystemConfig('smtp_port', smtpPort, 'SMTP server port'),
+        api.setSystemConfig('smtp_username', smtpUsername, 'SMTP username'),
+        api.setSystemConfig('smtp_password', smtpPassword, 'SMTP password'),
+        api.setSystemConfig('smtp_from_email', smtpFromEmail, 'From email address'),
+        api.setSystemConfig('smtp_from_name', smtpFromName, 'From name'),
+        api.setSystemConfig('smtp_use_tls', smtpUseTls ? 'true' : 'false', 'Use TLS encryption'),
+      ]);
+      setSmtpStatus('SMTP configuration saved successfully!');
+      loadAllData();
+    } catch (err: any) {
+      setError(err.message);
+      setSmtpStatus('Failed to save SMTP configuration');
+    } finally {
+      setIsSavingSmtp(false);
+    }
+  };
+
+  const handleTestSmtpConnection = async () => {
+    setSmtpStatus('Testing connection...');
+    try {
+      const result = await api.testSmtpConnection();
+      setSmtpStatus(result.message);
+    } catch (err: any) {
+      setSmtpStatus(`Connection test failed: ${err.message}`);
+    }
+  };
+
+  const handleSendTestEmail = async () => {
+    if (!testEmailAddress) {
+      setSmtpStatus('Please enter a test email address');
+      return;
+    }
+    setIsSendingTestEmail(true);
+    setSmtpStatus('Sending test email...');
+    try {
+      const result = await api.sendTestEmail(testEmailAddress);
+      setSmtpStatus(result.message);
+    } catch (err: any) {
+      setSmtpStatus(`Failed to send test email: ${err.message}`);
+    } finally {
+      setIsSendingTestEmail(false);
+    }
+  };
+
+  const handlePreviewEmail = async () => {
+    setIsLoadingPreview(true);
+    try {
+      const result = await api.previewCustomEmail(
+        emailTemplateSubject,
+        emailTemplateBody,
+        emailTemplateLogoUrl || undefined
+      );
+      setEmailPreviewSubject(result.subject);
+      setEmailPreviewBody(result.body_html);
+      setShowEmailPreviewDialog(true);
+    } catch (err: any) {
+      setError(`Failed to generate preview: ${err.message}`);
+    } finally {
+      setIsLoadingPreview(false);
+    }
+  };
+
+  const handlePreviewExistingTemplate = async (templateId: number) => {
+    setIsLoadingPreview(true);
+    try {
+      const result = await api.previewEmailTemplate(templateId);
+      setEmailPreviewSubject(result.subject);
+      setEmailPreviewBody(result.body_html);
+      setShowEmailPreviewDialog(true);
+    } catch (err: any) {
+      setError(`Failed to generate preview: ${err.message}`);
+    } finally {
+      setIsLoadingPreview(false);
     }
   };
 
@@ -1731,36 +1848,42 @@ export default function AdminPage() {
 
                       <div className="space-y-2">
                         <Label>Email Body (HTML)</Label>
-                        <Textarea 
-                          ref={emailBodyRef}
-                          value={emailTemplateBody} 
-                          onChange={(e) => setEmailTemplateBody(e.target.value)}
-                          onFocus={() => setActiveField('emailBody')}
-                          placeholder="<p>Dear {{customer_name}},</p><p>Your booking has been confirmed...</p>"
-                          className={`min-h-48 font-mono text-sm ${activeField === 'emailBody' ? 'ring-2 ring-indigo-500' : ''}`}
+                        <p className="text-xs text-gray-500 mb-2">Use the rich text editor below to create your email template with formatting, images, and branding.</p>
+                        <RichTextEditor
+                          content={emailTemplateBody}
+                          onChange={setEmailTemplateBody}
+                          placeholder="Start typing your email content..."
                         />
                       </div>
 
                       <div className="space-y-2">
-                        <Label>Data Field Selector</Label>
-                        <p className="text-xs text-gray-500 mb-2">Click on a field above, then click a placeholder below to insert it at your cursor position</p>
+                        <Label>Data Field Placeholders</Label>
+                        <p className="text-xs text-gray-500 mb-2">Click a placeholder to copy it, then paste it into the email subject or body where needed.</p>
                         <div className="flex flex-wrap gap-1 p-3 bg-gray-50 rounded-lg border">
                           {templatePlaceholders.map((placeholder) => (
                             <Button
                               key={placeholder}
-                              variant={activeField ? 'default' : 'outline'}
+                              variant="outline"
                               size="sm"
                               className="text-xs h-7"
-                              onClick={() => insertPlaceholderAtCursor(placeholder)}
-                              disabled={!activeField}
+                              onClick={() => {
+                                navigator.clipboard.writeText(placeholder);
+                                // Also insert into subject if that field is active
+                                if (activeField === 'emailSubject' && emailSubjectRef.current) {
+                                  const input = emailSubjectRef.current;
+                                  const start = input.selectionStart || 0;
+                                  const end = input.selectionEnd || 0;
+                                  const newValue = emailTemplateSubject.slice(0, start) + placeholder + emailTemplateSubject.slice(end);
+                                  setEmailTemplateSubject(newValue);
+                                }
+                              }}
+                              title="Click to copy placeholder"
                             >
                               {placeholder}
                             </Button>
                           ))}
                         </div>
-                        {!activeField && (
-                          <p className="text-xs text-amber-600 mt-1">Click on the Subject or Body field first to enable placeholder insertion</p>
-                        )}
+                        <p className="text-xs text-gray-500 mt-1">Tip: Click a placeholder to copy it to clipboard, then paste (Ctrl+V) into the editor.</p>
                       </div>
 
                       <div className="border-t pt-4">
@@ -1849,9 +1972,28 @@ export default function AdminPage() {
                         <label htmlFor="isDefault" className="text-sm">Set as default template for this type</label>
                       </div>
                     </div>
-                    <DialogFooter>
-                      <Button variant="outline" onClick={() => setShowEmailTemplateDialog(false)}>Cancel</Button>
-                      <Button onClick={handleSaveEmailTemplate}>Save Template</Button>
+                    <DialogFooter className="flex justify-between">
+                      <Button 
+                        variant="outline" 
+                        onClick={handlePreviewEmail}
+                        disabled={isLoadingPreview || !emailTemplateSubject || !emailTemplateBody}
+                      >
+                        {isLoadingPreview ? (
+                          <>
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            Loading Preview...
+                          </>
+                        ) : (
+                          <>
+                            <Mail className="w-4 h-4 mr-2" />
+                            Preview Email
+                          </>
+                        )}
+                      </Button>
+                      <div className="flex gap-2">
+                        <Button variant="outline" onClick={() => setShowEmailTemplateDialog(false)}>Cancel</Button>
+                        <Button onClick={handleSaveEmailTemplate}>Save Template</Button>
+                      </div>
                     </DialogFooter>
                   </DialogContent>
                 </Dialog>
@@ -1896,6 +2038,14 @@ export default function AdminPage() {
                             {template.is_default && <Badge className="bg-green-100 text-green-800">Default</Badge>}
                           </TableCell>
                           <TableCell className="text-right">
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              onClick={() => handlePreviewExistingTemplate(template.id)}
+                              title="Preview email"
+                            >
+                              <Mail className="w-4 h-4 text-blue-500" />
+                            </Button>
                             <Button variant="ghost" size="sm" onClick={() => openEditEmailTemplate(template)}>
                               <Edit className="w-4 h-4" />
                             </Button>
@@ -2540,6 +2690,127 @@ export default function AdminPage() {
 
             <Card className="mt-6">
               <CardHeader>
+                <CardTitle>SMTP Email Configuration</CardTitle>
+                <CardDescription>
+                  Configure SMTP settings to send emails without Microsoft/Azure integration. Works with any SMTP provider (Gmail, SendGrid, Mailgun, etc.)
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-6">
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label>SMTP Host</Label>
+                      <Input 
+                        value={smtpHost} 
+                        onChange={(e) => setSmtpHost(e.target.value)}
+                        placeholder="smtp.gmail.com or smtp.sendgrid.net"
+                      />
+                      <p className="text-xs text-gray-500">Your SMTP server hostname</p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>SMTP Port</Label>
+                      <Input 
+                        value={smtpPort} 
+                        onChange={(e) => setSmtpPort(e.target.value)}
+                        placeholder="587"
+                      />
+                      <p className="text-xs text-gray-500">Usually 587 (TLS) or 465 (SSL)</p>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label>SMTP Username</Label>
+                      <Input 
+                        value={smtpUsername} 
+                        onChange={(e) => setSmtpUsername(e.target.value)}
+                        placeholder="your-email@gmail.com or API key"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>SMTP Password</Label>
+                      <Input 
+                        type="password"
+                        value={smtpPassword} 
+                        onChange={(e) => setSmtpPassword(e.target.value)}
+                        placeholder="App password or API key"
+                      />
+                      <p className="text-xs text-gray-500">For Gmail, use an App Password</p>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label>From Email Address</Label>
+                      <Input 
+                        value={smtpFromEmail} 
+                        onChange={(e) => setSmtpFromEmail(e.target.value)}
+                        placeholder="noreply@yourcompany.com"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>From Name</Label>
+                      <Input 
+                        value={smtpFromName} 
+                        onChange={(e) => setSmtpFromName(e.target.value)}
+                        placeholder="Your Company Scheduling"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center space-x-2">
+                    <Checkbox 
+                      id="smtpUseTls"
+                      checked={smtpUseTls}
+                      onCheckedChange={(checked) => setSmtpUseTls(checked as boolean)}
+                    />
+                    <Label htmlFor="smtpUseTls">Use TLS encryption (recommended)</Label>
+                  </div>
+
+                  <div className="border-t pt-4">
+                    <h4 className="font-medium mb-3">Test SMTP Configuration</h4>
+                    <div className="flex gap-2 items-end">
+                      <div className="flex-1 space-y-2">
+                        <Label>Test Email Address</Label>
+                        <Input 
+                          value={testEmailAddress} 
+                          onChange={(e) => setTestEmailAddress(e.target.value)}
+                          placeholder="your-email@example.com"
+                        />
+                      </div>
+                      <Button 
+                        variant="outline" 
+                        onClick={handleTestSmtpConnection}
+                        disabled={!smtpHost || !smtpPort}
+                      >
+                        Test Connection
+                      </Button>
+                      <Button 
+                        onClick={handleSendTestEmail}
+                        disabled={isSendingTestEmail || !testEmailAddress || !smtpHost}
+                      >
+                        {isSendingTestEmail ? 'Sending...' : 'Send Test Email'}
+                      </Button>
+                    </div>
+                  </div>
+
+                  {smtpStatus && (
+                    <div className={`p-3 rounded-lg ${smtpStatus.includes('success') ? 'bg-green-50 text-green-700' : smtpStatus.includes('Testing') || smtpStatus.includes('Sending') ? 'bg-blue-50 text-blue-700' : 'bg-red-50 text-red-700'}`}>
+                      {smtpStatus}
+                    </div>
+                  )}
+
+                  <div className="flex justify-end">
+                    <Button onClick={handleSaveSmtpConfig} disabled={isSavingSmtp}>
+                      {isSavingSmtp ? 'Saving...' : 'Save SMTP Settings'}
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="mt-6">
+              <CardHeader>
                 <CardTitle>User Management</CardTitle>
                 <CardDescription>Manage user roles</CardDescription>
               </CardHeader>
@@ -2587,6 +2858,41 @@ export default function AdminPage() {
             </Card>
           </TabsContent>
         </Tabs>
+
+        {/* Email Preview Dialog */}
+        <Dialog open={showEmailPreviewDialog} onOpenChange={setShowEmailPreviewDialog}>
+          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Email Preview</DialogTitle>
+              <DialogDescription>
+                This is how your email will look with sample booking data filled in
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="p-4 bg-gray-50 rounded-lg border">
+                <div className="mb-2">
+                  <span className="text-sm font-medium text-gray-500">Subject:</span>
+                  <p className="text-lg font-medium">{emailPreviewSubject}</p>
+                </div>
+                <div className="border-t pt-4 mt-4">
+                  <span className="text-sm font-medium text-gray-500 mb-2 block">Body:</span>
+                  <div 
+                    className="prose prose-sm max-w-none bg-white p-4 rounded border"
+                    dangerouslySetInnerHTML={{ __html: emailPreviewBody }}
+                  />
+                </div>
+              </div>
+              <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
+                <p className="text-sm text-blue-700">
+                  <strong>Note:</strong> This preview uses sample data. Actual emails will contain real booking information.
+                </p>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button onClick={() => setShowEmailPreviewDialog(false)}>Close</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </main>
     </div>
   );
