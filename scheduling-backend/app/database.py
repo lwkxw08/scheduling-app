@@ -38,6 +38,8 @@ async def run_migrations(conn):
         ("email_templates", "logo_url", "VARCHAR(1000)"),
         ("bookings", "engineer_attachment_url", "VARCHAR(1000)"),
         ("bookings", "customer_attachment_url", "VARCHAR(1000)"),
+        ("products", "expedite_fee", "FLOAT DEFAULT 0.0"),
+        ("products", "expedite_contact_emails", "JSON"),
     ]
     
     for table_name, column_name, column_def in migrations:
