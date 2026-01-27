@@ -569,11 +569,11 @@ class EngineerUnavailabilityResponse(BaseModel):
     engineer_id: int
     start_datetime: datetime
     end_datetime: datetime
-    reason: Optional[str]
+    reason: Optional[str] = None
     created_by_id: int
     is_all_day: bool
     created_at: datetime
-    updated_at: datetime
+    updated_at: Optional[datetime] = None
     engineer: Optional[EngineerResponse] = None
     created_by: Optional[UserResponse] = None
 

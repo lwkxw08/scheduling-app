@@ -15,7 +15,7 @@ from app.schemas.schemas import (
     EngineerUnavailabilityCreate, EngineerUnavailabilityResponse,
     EngineerDashboardStats, EngineerResponse
 )
-from app.services.auth import decode_token
+from app.services.auth import decode_access_token
 
 router = APIRouter(prefix="/engineer", tags=["engineer"])
 
@@ -26,7 +26,7 @@ async def get_current_user(authorization: str, db: AsyncSession) -> User:
         raise HTTPException(status_code=401, detail="Invalid authorization header")
     
     token = authorization.replace("Bearer ", "")
-    payload = decode_token(token)
+    payload = decode_access_token(token)
     if not payload:
         raise HTTPException(status_code=401, detail="Invalid token")
     

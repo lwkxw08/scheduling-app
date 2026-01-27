@@ -1766,13 +1766,15 @@ async def get_revenue_summary_report(
 
 # ==================== Engineer Unavailability Management ====================
 
-@router.get("/engineers/{engineer_id}/unavailability", response_model=List[EngineerUnavailabilityResponse])
+@router.get("/engineers/{engineer_id}/unavailability")
 async def get_engineer_unavailability(
     engineer_id: int,
-    db: AsyncSession = Depends(get_db),
-    admin_user: User = Depends(get_admin_user)
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
 ):
     """Get all unavailability entries for an engineer"""
+    await get_admin_user(authorization, db)
+    
     result = await db.execute(
         select(EngineerUnavailability)
         .options(selectinload(EngineerUnavailability.created_by))
@@ -1782,14 +1784,16 @@ async def get_engineer_unavailability(
     return result.scalars().all()
 
 
-@router.post("/engineers/{engineer_id}/unavailability", response_model=EngineerUnavailabilityResponse)
+@router.post("/engineers/{engineer_id}/unavailability")
 async def create_engineer_unavailability(
     engineer_id: int,
     unavailability: EngineerUnavailabilityCreate,
-    db: AsyncSession = Depends(get_db),
-    admin_user: User = Depends(get_admin_user)
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
 ):
     """Create an unavailability entry for any engineer (admin only)"""
+    admin_user = await get_admin_user(authorization, db)
+    
     # Verify engineer exists
     engineer_result = await db.execute(select(Engineer).where(Engineer.id == engineer_id))
     engineer = engineer_result.scalar_one_or_none()
@@ -1820,10 +1824,12 @@ async def create_engineer_unavailability(
 @router.delete("/unavailability/{unavailability_id}")
 async def delete_unavailability(
     unavailability_id: int,
-    db: AsyncSession = Depends(get_db),
-    admin_user: User = Depends(get_admin_user)
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
 ):
     """Delete any unavailability entry (admin only)"""
+    await get_admin_user(authorization, db)
+    
     result = await db.execute(
         select(EngineerUnavailability).where(EngineerUnavailability.id == unavailability_id)
     )
@@ -1836,12 +1842,14 @@ async def delete_unavailability(
     return {"message": "Unavailability entry deleted"}
 
 
-@router.get("/all-unavailability", response_model=List[EngineerUnavailabilityResponse])
+@router.get("/all-unavailability")
 async def get_all_unavailability(
-    db: AsyncSession = Depends(get_db),
-    admin_user: User = Depends(get_admin_user)
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
 ):
     """Get all unavailability entries for all engineers"""
+    await get_admin_user(authorization, db)
+    
     result = await db.execute(
         select(EngineerUnavailability)
         .options(
