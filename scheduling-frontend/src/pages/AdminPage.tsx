@@ -678,9 +678,9 @@ export default function AdminPage() {
       
       switch (reportType) {
         case 'bookings':
-          if (reportProductFilter) filters.product_id = parseInt(reportProductFilter);
-          if (reportEngineerFilter) filters.engineer_id = parseInt(reportEngineerFilter);
-          if (reportStatusFilter) filters.status = reportStatusFilter;
+          if (reportProductFilter && reportProductFilter !== 'all') filters.product_id = parseInt(reportProductFilter);
+          if (reportEngineerFilter && reportEngineerFilter !== 'all') filters.engineer_id = parseInt(reportEngineerFilter);
+          if (reportStatusFilter && reportStatusFilter !== 'all') filters.status = reportStatusFilter;
           data = await api.getBookingsReport(filters) as any[];
           break;
         case 'engineers':
@@ -1463,7 +1463,7 @@ export default function AdminPage() {
                           <SelectValue placeholder="All Products" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="">All Products</SelectItem>
+                          <SelectItem value="all">All Products</SelectItem>
                           {products.map(p => (
                             <SelectItem key={p.id} value={p.id.toString()}>{p.name}</SelectItem>
                           ))}
@@ -1477,7 +1477,7 @@ export default function AdminPage() {
                           <SelectValue placeholder="All Engineers" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="">All Engineers</SelectItem>
+                          <SelectItem value="all">All Engineers</SelectItem>
                           {engineers.map(e => (
                             <SelectItem key={e.id} value={e.id.toString()}>{e.user?.full_name || e.calendar_email}</SelectItem>
                           ))}
@@ -1491,7 +1491,7 @@ export default function AdminPage() {
                           <SelectValue placeholder="All Statuses" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="">All Statuses</SelectItem>
+                          <SelectItem value="all">All Statuses</SelectItem>
                           <SelectItem value="pending">Pending</SelectItem>
                           <SelectItem value="confirmed">Confirmed</SelectItem>
                           <SelectItem value="completed">Completed</SelectItem>
