@@ -62,17 +62,17 @@ class ApiService {
     return this.request('/admin/products');
   }
 
-  async createProduct(name: string, description?: string) {
+  async createProduct(name: string, description?: string, expediteFee?: number, expediteContactEmails?: string[]) {
     return this.request('/admin/products', {
       method: 'POST',
-      body: JSON.stringify({ name, description }),
+      body: JSON.stringify({ name, description, expedite_fee: expediteFee, expedite_contact_emails: expediteContactEmails }),
     });
   }
 
-  async updateProduct(id: number, name: string, description?: string) {
+  async updateProduct(id: number, name?: string, description?: string, expediteFee?: number, expediteContactEmails?: string[]) {
     return this.request(`/admin/products/${id}`, {
       method: 'PATCH',
-      body: JSON.stringify({ name, description }),
+      body: JSON.stringify({ name, description, expedite_fee: expediteFee, expedite_contact_emails: expediteContactEmails }),
     });
   }
 
@@ -509,6 +509,65 @@ class ApiService {
       return relativePath;
     }
     return `${API_URL}${relativePath}`;
+  }
+
+  // Expedite Request Methods
+  async createExpediteRequest(data: {
+    product_id: number;
+    change_type_id: number;
+    order_reference: string;
+    customer_name: string;
+    requested_date: string;
+    duration_hours: number;
+    custom_fields_data?: Record<string, any>;
+    notes?: string;
+    additional_emails?: string[];
+    engineer_attachment_url?: string;
+    customer_attachment_url?: string;
+    fee_acknowledged: boolean;
+  }) {
+    return this.request('/bookings/expedite-request', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getMyExpediteRequests() {
+    return this.request('/bookings/expedite-requests/my');
+  }
+
+  async getProductExpediteFee(productId: number) {
+    return this.request<{ product_id: number; product_name: string; expedite_fee: number }>(
+      `/bookings/product/${productId}/expedite-fee`
+    );
+  }
+
+  // Admin Expedite Request Methods
+  async getExpediteRequests(statusFilter?: string) {
+    const params = statusFilter ? `?status_filter=${statusFilter}` : '';
+    return this.request(`/admin/expedite-requests${params}`);
+  }
+
+  async getExpediteRequest(requestId: number) {
+    return this.request(`/admin/expedite-requests/${requestId}`);
+  }
+
+  async approveExpediteRequest(requestId: number, data: {
+    assigned_engineer_id: number;
+    scheduled_date: string;
+    admin_notes?: string;
+  }) {
+    return this.request(`/admin/expedite-requests/${requestId}/approve`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async rejectExpediteRequest(requestId: number, data: { admin_notes?: string }) {
+    return this.request(`/admin/expedite-requests/${requestId}/reject`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
   }
 }
 

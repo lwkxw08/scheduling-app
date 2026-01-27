@@ -14,10 +14,11 @@ from app.models.database_models import (
     User, UserRole, Engineer, Product, ChangeType, EngineerSkill,
     CustomField, SystemConfig, Fee, Booking, BookingStatus, EngineerSchedule,
     EmailTemplate, CalendarEventTemplate, TemplateType,
-    RosterPattern, RosterPhase, EngineerRosterAssignment
+    RosterPattern, RosterPhase, EngineerRosterAssignment,
+    ExpediteRequest, ExpediteRequestStatus
 )
 from app.schemas.schemas import (
-    ProductCreate, ProductResponse, ChangeTypeCreate, ChangeTypeResponse,
+    ProductCreate, ProductUpdate, ProductResponse, ChangeTypeCreate, ChangeTypeResponse,
     EngineerCreate, EngineerResponse, EngineerSkillCreate, EngineerSkillResponse,
     CustomFieldCreate, CustomFieldResponse, FeeCreate, FeeResponse,
     SystemConfigUpdate, SystemConfigResponse, DashboardStats, UserResponse,
@@ -26,7 +27,8 @@ from app.schemas.schemas import (
     CalendarEventTemplateResponse, TemplatePlaceholders,
     RosterPatternCreate, RosterPatternUpdate, RosterPatternResponse,
     RosterPhaseCreate, RosterPhaseResponse, RosterPatternListResponse,
-    EngineerRosterAssignmentCreate, EngineerRosterAssignmentResponse
+    EngineerRosterAssignmentCreate, EngineerRosterAssignmentResponse,
+    ExpediteRequestCreate, ExpediteRequestApprove, ExpediteRequestReject, ExpediteRequestResponse
 )
 from app.services.auth import decode_access_token
 
@@ -124,7 +126,12 @@ async def create_product(
 ):
     await get_admin_user(authorization, db)
     
-    product = Product(name=product_data.name, description=product_data.description)
+    product = Product(
+        name=product_data.name,
+        description=product_data.description,
+        expedite_fee=product_data.expedite_fee or 0.0,
+        expedite_contact_emails=product_data.expedite_contact_emails
+    )
     db.add(product)
     try:
         await db.commit()
@@ -148,10 +155,10 @@ async def get_products(
     return [ProductResponse.model_validate(p) for p in products]
 
 
-@router.patch("/products/{product_id}")
+@router.patch("/products/{product_id}", response_model=ProductResponse)
 async def update_product(
     product_id: int,
-    product_data: ProductCreate,
+    product_data: ProductUpdate,
     authorization: str = Header(None),
     db: AsyncSession = Depends(get_db)
 ):
@@ -162,10 +169,18 @@ async def update_product(
     if not product:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
     
-    product.name = product_data.name
-    product.description = product_data.description
+    if product_data.name is not None:
+        product.name = product_data.name
+    if product_data.description is not None:
+        product.description = product_data.description
+    if product_data.expedite_fee is not None:
+        product.expedite_fee = product_data.expedite_fee
+    if product_data.expedite_contact_emails is not None:
+        product.expedite_contact_emails = product_data.expedite_contact_emails
+    
     await db.commit()
-    return {"message": "Product updated successfully"}
+    await db.refresh(product)
+    return ProductResponse.model_validate(product)
 
 
 @router.delete("/products/{product_id}")
@@ -1309,3 +1324,164 @@ async def get_uploaded_file(file_type: str, filename: str):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
     
     return FileResponse(file_path)
+
+
+# Expedite Request Endpoints
+@router.get("/expedite-requests", response_model=List[ExpediteRequestResponse])
+async def get_expedite_requests(
+    status_filter: str = None,
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get all expedite requests (admin only)"""
+    await get_admin_user(authorization, db)
+    
+    query = select(ExpediteRequest).options(
+        selectinload(ExpediteRequest.requester),
+        selectinload(ExpediteRequest.product),
+        selectinload(ExpediteRequest.change_type),
+        selectinload(ExpediteRequest.assigned_engineer).selectinload(Engineer.user)
+    ).order_by(ExpediteRequest.created_at.desc())
+    
+    if status_filter:
+        query = query.where(ExpediteRequest.status == status_filter)
+    
+    result = await db.execute(query)
+    requests = result.scalars().all()
+    return [ExpediteRequestResponse.model_validate(r) for r in requests]
+
+
+@router.get("/expedite-requests/{request_id}", response_model=ExpediteRequestResponse)
+async def get_expedite_request(
+    request_id: int,
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get a specific expedite request"""
+    await get_admin_user(authorization, db)
+    
+    result = await db.execute(
+        select(ExpediteRequest)
+        .options(
+            selectinload(ExpediteRequest.requester),
+            selectinload(ExpediteRequest.product),
+            selectinload(ExpediteRequest.change_type),
+            selectinload(ExpediteRequest.assigned_engineer).selectinload(Engineer.user)
+        )
+        .where(ExpediteRequest.id == request_id)
+    )
+    request = result.scalar_one_or_none()
+    if not request:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Expedite request not found")
+    
+    return ExpediteRequestResponse.model_validate(request)
+
+
+@router.post("/expedite-requests/{request_id}/approve", response_model=ExpediteRequestResponse)
+async def approve_expedite_request(
+    request_id: int,
+    approval_data: ExpediteRequestApprove,
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """Approve an expedite request and create a booking"""
+    await get_admin_user(authorization, db)
+    
+    result = await db.execute(
+        select(ExpediteRequest)
+        .options(
+            selectinload(ExpediteRequest.requester),
+            selectinload(ExpediteRequest.product),
+            selectinload(ExpediteRequest.change_type)
+        )
+        .where(ExpediteRequest.id == request_id)
+    )
+    expedite_request = result.scalar_one_or_none()
+    if not expedite_request:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Expedite request not found")
+    
+    if expedite_request.status != ExpediteRequestStatus.PENDING:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Request has already been processed")
+    
+    # Verify engineer exists
+    engineer_result = await db.execute(select(Engineer).where(Engineer.id == approval_data.assigned_engineer_id))
+    engineer = engineer_result.scalar_one_or_none()
+    if not engineer:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Engineer not found")
+    
+    # Create the booking
+    booking = Booking(
+        order_reference=expedite_request.order_reference,
+        customer_name=expedite_request.customer_name,
+        booker_id=expedite_request.requester_id,
+        engineer_id=approval_data.assigned_engineer_id,
+        product_id=expedite_request.product_id,
+        change_type_id=expedite_request.change_type_id,
+        scheduled_date=approval_data.scheduled_date,
+        duration_hours=expedite_request.duration_hours,
+        status=BookingStatus.CONFIRMED,
+        custom_fields_data=expedite_request.custom_fields_data,
+        notes=expedite_request.notes,
+        additional_emails=expedite_request.additional_emails,
+        engineer_attachment_url=expedite_request.engineer_attachment_url,
+        customer_attachment_url=expedite_request.customer_attachment_url,
+        expedite_fee=expedite_request.expedite_fee
+    )
+    db.add(booking)
+    await db.flush()
+    
+    # Update the expedite request
+    expedite_request.status = ExpediteRequestStatus.APPROVED
+    expedite_request.assigned_engineer_id = approval_data.assigned_engineer_id
+    expedite_request.admin_notes = approval_data.admin_notes
+    expedite_request.resulting_booking_id = booking.id
+    
+    await db.commit()
+    
+    # Reload with relationships
+    result = await db.execute(
+        select(ExpediteRequest)
+        .options(
+            selectinload(ExpediteRequest.requester),
+            selectinload(ExpediteRequest.product),
+            selectinload(ExpediteRequest.change_type),
+            selectinload(ExpediteRequest.assigned_engineer).selectinload(Engineer.user)
+        )
+        .where(ExpediteRequest.id == request_id)
+    )
+    updated_request = result.scalar_one()
+    return ExpediteRequestResponse.model_validate(updated_request)
+
+
+@router.post("/expedite-requests/{request_id}/reject", response_model=ExpediteRequestResponse)
+async def reject_expedite_request(
+    request_id: int,
+    rejection_data: ExpediteRequestReject,
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """Reject an expedite request"""
+    await get_admin_user(authorization, db)
+    
+    result = await db.execute(
+        select(ExpediteRequest)
+        .options(
+            selectinload(ExpediteRequest.requester),
+            selectinload(ExpediteRequest.product),
+            selectinload(ExpediteRequest.change_type)
+        )
+        .where(ExpediteRequest.id == request_id)
+    )
+    expedite_request = result.scalar_one_or_none()
+    if not expedite_request:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Expedite request not found")
+    
+    if expedite_request.status != ExpediteRequestStatus.PENDING:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Request has already been processed")
+    
+    expedite_request.status = ExpediteRequestStatus.REJECTED
+    expedite_request.admin_notes = rejection_data.admin_notes
+    
+    await db.commit()
+    await db.refresh(expedite_request)
+    return ExpediteRequestResponse.model_validate(expedite_request)

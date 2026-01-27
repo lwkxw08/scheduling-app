@@ -54,12 +54,23 @@ class MicrosoftAuthRequest(BaseModel):
 class ProductCreate(BaseModel):
     name: str
     description: Optional[str] = None
+    expedite_fee: Optional[float] = 0.0
+    expedite_contact_emails: Optional[List[str]] = None
+
+
+class ProductUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    expedite_fee: Optional[float] = None
+    expedite_contact_emails: Optional[List[str]] = None
 
 
 class ProductResponse(BaseModel):
     id: int
     name: str
     description: Optional[str]
+    expedite_fee: float
+    expedite_contact_emails: Optional[List[str]]
     is_active: bool
     created_at: datetime
 
@@ -475,6 +486,69 @@ class RosterPatternListResponse(BaseModel):
     is_active: bool
     phase_count: int
     created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# Expedite Request Schemas
+class ExpediteRequestStatus(str, Enum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+
+class ExpediteRequestCreate(BaseModel):
+    product_id: int
+    change_type_id: int
+    order_reference: str
+    customer_name: str
+    requested_date: datetime
+    duration_hours: float
+    custom_fields_data: Optional[dict] = None
+    notes: Optional[str] = None
+    additional_emails: Optional[List[str]] = None
+    engineer_attachment_url: Optional[str] = None
+    customer_attachment_url: Optional[str] = None
+    fee_acknowledged: bool = True
+
+
+class ExpediteRequestApprove(BaseModel):
+    assigned_engineer_id: int
+    scheduled_date: datetime
+    admin_notes: Optional[str] = None
+
+
+class ExpediteRequestReject(BaseModel):
+    admin_notes: Optional[str] = None
+
+
+class ExpediteRequestResponse(BaseModel):
+    id: int
+    requester_id: int
+    product_id: int
+    change_type_id: int
+    order_reference: str
+    customer_name: str
+    requested_date: datetime
+    duration_hours: float
+    custom_fields_data: Optional[dict]
+    notes: Optional[str]
+    additional_emails: Optional[List[str]]
+    engineer_attachment_url: Optional[str]
+    customer_attachment_url: Optional[str]
+    expedite_fee: float
+    fee_acknowledged: bool
+    status: ExpediteRequestStatus
+    admin_notes: Optional[str]
+    assigned_engineer_id: Optional[int]
+    resulting_booking_id: Optional[int]
+    created_at: datetime
+    updated_at: datetime
+    requester: Optional[UserResponse] = None
+    product: Optional[ProductResponse] = None
+    change_type: Optional[ChangeTypeResponse] = None
+    assigned_engineer: Optional[EngineerResponse] = None
 
     class Config:
         from_attributes = True

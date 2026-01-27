@@ -19,6 +19,12 @@ class BookingStatus(str, enum.Enum):
     COMPLETED = "completed"
 
 
+class ExpediteRequestStatus(str, enum.Enum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -79,11 +85,14 @@ class Product(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(255), unique=True, nullable=False)
     description = Column(Text, nullable=True)
+    expedite_fee = Column(Float, default=0.0)  # Fee for expedite requests
+    expedite_contact_emails = Column(JSON, nullable=True)  # List of email addresses for expedite notifications
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     skills = relationship("EngineerSkill", back_populates="product")
     bookings = relationship("Booking", back_populates="product")
+    expedite_requests = relationship("ExpediteRequest", back_populates="product")
 
 
 class ChangeType(Base):
@@ -273,3 +282,36 @@ class EngineerRosterAssignment(Base):
 
     engineer = relationship("Engineer", back_populates="roster_assignments")
     pattern = relationship("RosterPattern", back_populates="assignments")
+
+
+class ExpediteRequest(Base):
+    """Expedite requests for bookings when no availability exists"""
+    __tablename__ = "expedite_requests"
+
+    id = Column(Integer, primary_key=True, index=True)
+    requester_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
+    change_type_id = Column(Integer, ForeignKey("change_types.id"), nullable=False)
+    order_reference = Column(String(255), nullable=False)
+    customer_name = Column(String(255), nullable=False)
+    requested_date = Column(DateTime, nullable=False)
+    duration_hours = Column(Float, nullable=False)
+    custom_fields_data = Column(JSON, nullable=True)
+    notes = Column(Text, nullable=True)
+    additional_emails = Column(JSON, nullable=True)
+    engineer_attachment_url = Column(String(1000), nullable=True)
+    customer_attachment_url = Column(String(1000), nullable=True)
+    expedite_fee = Column(Float, nullable=False)
+    fee_acknowledged = Column(Boolean, default=False)
+    status = Column(SQLEnum(ExpediteRequestStatus), default=ExpediteRequestStatus.PENDING)
+    admin_notes = Column(Text, nullable=True)
+    assigned_engineer_id = Column(Integer, ForeignKey("engineers.id"), nullable=True)
+    resulting_booking_id = Column(Integer, ForeignKey("bookings.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    requester = relationship("User", foreign_keys=[requester_id])
+    product = relationship("Product", back_populates="expedite_requests")
+    change_type = relationship("ChangeType")
+    assigned_engineer = relationship("Engineer", foreign_keys=[assigned_engineer_id])
+    resulting_booking = relationship("Booking", foreign_keys=[resulting_booking_id])

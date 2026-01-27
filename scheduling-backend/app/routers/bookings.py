@@ -6,8 +6,8 @@ from datetime import datetime, timedelta
 from typing import List, Optional
 
 from app.database import get_db
-from app.models.database_models import Booking, BookingStatus, Engineer, User, SystemConfig, Fee
-from app.schemas.schemas import BookingCreate, BookingUpdate, BookingResponse
+from app.models.database_models import Booking, BookingStatus, Engineer, User, SystemConfig, Fee, Product, ExpediteRequest, ExpediteRequestStatus
+from app.schemas.schemas import BookingCreate, BookingUpdate, BookingResponse, ExpediteRequestCreate, ExpediteRequestResponse
 from app.services.auth import decode_access_token
 from app.services import microsoft_graph
 from app.services.availability import check_specific_slot_availability
@@ -384,4 +384,103 @@ async def cancel_booking(
     return {
         "message": "Booking cancelled successfully",
         "cancellation_fee": booking.cancellation_fee
+    }
+
+
+@router.post("/expedite-request", response_model=ExpediteRequestResponse)
+async def create_expedite_request(
+    request_data: ExpediteRequestCreate,
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """Create an expedite request when no availability exists for the requested date/time"""
+    user = await get_current_user(authorization, db)
+    
+    # Get the product to retrieve the expedite fee
+    result = await db.execute(select(Product).where(Product.id == request_data.product_id))
+    product = result.scalar_one_or_none()
+    if not product:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
+    
+    expedite_fee = product.expedite_fee or 0.0
+    
+    # Create the expedite request
+    expedite_request = ExpediteRequest(
+        requester_id=user.id,
+        product_id=request_data.product_id,
+        change_type_id=request_data.change_type_id,
+        order_reference=request_data.order_reference,
+        customer_name=request_data.customer_name,
+        requested_date=request_data.requested_date,
+        duration_hours=request_data.duration_hours,
+        custom_fields_data=request_data.custom_fields_data,
+        notes=request_data.notes,
+        additional_emails=request_data.additional_emails,
+        engineer_attachment_url=request_data.engineer_attachment_url,
+        customer_attachment_url=request_data.customer_attachment_url,
+        expedite_fee=expedite_fee,
+        fee_acknowledged=request_data.fee_acknowledged,
+        status=ExpediteRequestStatus.PENDING
+    )
+    
+    db.add(expedite_request)
+    await db.commit()
+    await db.refresh(expedite_request)
+    
+    # Reload with relationships
+    result = await db.execute(
+        select(ExpediteRequest)
+        .options(
+            selectinload(ExpediteRequest.requester),
+            selectinload(ExpediteRequest.product),
+            selectinload(ExpediteRequest.change_type)
+        )
+        .where(ExpediteRequest.id == expedite_request.id)
+    )
+    expedite_request = result.scalar_one()
+    
+    return ExpediteRequestResponse.model_validate(expedite_request)
+
+
+@router.get("/expedite-requests/my", response_model=List[ExpediteRequestResponse])
+async def get_my_expedite_requests(
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get the current user's expedite requests"""
+    user = await get_current_user(authorization, db)
+    
+    result = await db.execute(
+        select(ExpediteRequest)
+        .options(
+            selectinload(ExpediteRequest.requester),
+            selectinload(ExpediteRequest.product),
+            selectinload(ExpediteRequest.change_type),
+            selectinload(ExpediteRequest.assigned_engineer).selectinload(Engineer.user)
+        )
+        .where(ExpediteRequest.requester_id == user.id)
+        .order_by(ExpediteRequest.created_at.desc())
+    )
+    requests = result.scalars().all()
+    return [ExpediteRequestResponse.model_validate(r) for r in requests]
+
+
+@router.get("/product/{product_id}/expedite-fee")
+async def get_product_expedite_fee(
+    product_id: int,
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get the expedite fee for a specific product"""
+    await get_current_user(authorization, db)
+    
+    result = await db.execute(select(Product).where(Product.id == product_id))
+    product = result.scalar_one_or_none()
+    if not product:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
+    
+    return {
+        "product_id": product.id,
+        "product_name": product.name,
+        "expedite_fee": product.expedite_fee or 0.0
     }

@@ -17,6 +17,8 @@ export interface Product {
   id: number;
   name: string;
   description: string | null;
+  expedite_fee: number;
+  expedite_contact_emails: string[] | null;
   is_active: boolean;
   created_at: string;
 }
@@ -204,4 +206,34 @@ export interface EngineerRosterAssignment {
   pattern?: RosterPattern;
   created_at: string;
   updated_at: string;
+}
+
+export type ExpediteRequestStatus = 'pending' | 'approved' | 'rejected';
+
+export interface ExpediteRequest {
+  id: number;
+  requester_id: number;
+  product_id: number;
+  change_type_id: number;
+  order_reference: string;
+  customer_name: string;
+  requested_date: string;
+  duration_hours: number;
+  custom_fields_data: Record<string, any> | null;
+  notes: string | null;
+  additional_emails: string[] | null;
+  engineer_attachment_url: string | null;
+  customer_attachment_url: string | null;
+  expedite_fee: number;
+  fee_acknowledged: boolean;
+  status: ExpediteRequestStatus;
+  admin_notes: string | null;
+  assigned_engineer_id: number | null;
+  resulting_booking_id: number | null;
+  created_at: string;
+  updated_at: string;
+  requester?: User;
+  product?: Product;
+  change_type?: ChangeType;
+  assigned_engineer?: Engineer;
 }

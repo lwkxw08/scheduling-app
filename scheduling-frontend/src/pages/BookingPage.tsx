@@ -10,7 +10,8 @@ import { Textarea } from '../components/ui/textarea';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Checkbox } from '../components/ui/checkbox';
-import { Calendar, ArrowLeft, Clock, User, Check, Paperclip, Upload, Loader2 } from 'lucide-react';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../components/ui/dialog';
+import { Calendar, ArrowLeft, Clock, User, Check, Paperclip, Upload, Loader2, AlertCircle } from 'lucide-react';
 
 export default function BookingPage() {
   const navigate = useNavigate();
@@ -47,6 +48,14 @@ export default function BookingPage() {
   const [isUploadingEngineerAttachment, setIsUploadingEngineerAttachment] = useState(false);
   const [isUploadingCustomerAttachment, setIsUploadingCustomerAttachment] = useState(false);
 
+  // Expedite request state
+  const [showNoAvailabilityOptions, setShowNoAvailabilityOptions] = useState(false);
+  const [showExpediteDialog, setShowExpediteDialog] = useState(false);
+  const [expediteFee, setExpediteFee] = useState<number>(0);
+  const [expediteFeeAcknowledged, setExpediteFeeAcknowledged] = useState(false);
+  const [isSubmittingExpedite, setIsSubmittingExpedite] = useState(false);
+  const [expediteRequestedTime, setExpediteRequestedTime] = useState('09:00');
+
   useEffect(() => {
     loadFormData();
   }, []);
@@ -74,14 +83,28 @@ export default function BookingPage() {
 
     setIsLoading(true);
     setError('');
+    setShowNoAvailabilityOptions(false);
 
     try {
       const duration = durationHours === 0 ? parseFloat(customDuration) : durationHours;
       const response = await api.checkAvailability(selectedDate, productId, changeTypeId, duration) as AvailabilityResponse;
       setAvailability(response.engineers);
       
-      if (response.engineers.length === 0) {
+      // Check if any engineer has available slots
+      const hasAvailableSlots = response.engineers.some(eng => 
+        eng.slots.some(slot => slot.is_available)
+      );
+      
+      if (response.engineers.length === 0 || !hasAvailableSlots) {
         setError('No engineers available for the selected criteria');
+        setShowNoAvailabilityOptions(true);
+        // Fetch expedite fee for the selected product
+        try {
+          const feeData = await api.getProductExpediteFee(productId);
+          setExpediteFee(feeData.expedite_fee);
+        } catch {
+          setExpediteFee(0);
+        }
       } else {
         setStep(3);
       }
@@ -222,6 +245,50 @@ export default function BookingPage() {
     }
   };
 
+  const handleSubmitExpediteRequest = async () => {
+    if (!expediteFeeAcknowledged) {
+      setError('Please acknowledge the expedite fee before submitting');
+      return;
+    }
+
+    setIsSubmittingExpedite(true);
+    setError('');
+
+    try {
+      const duration = durationHours === 0 ? parseFloat(customDuration) : durationHours;
+      const requestedDateTime = `${selectedDate}T${expediteRequestedTime}:00`;
+
+      const emailList = additionalEmails
+        .split(',')
+        .map(e => e.trim())
+        .filter(e => e.length > 0);
+
+      await api.createExpediteRequest({
+        product_id: productId!,
+        change_type_id: changeTypeId!,
+        order_reference: orderReference,
+        customer_name: customerName,
+        requested_date: requestedDateTime,
+        duration_hours: duration,
+        custom_fields_data: Object.keys(customFieldValues).length > 0 ? customFieldValues : undefined,
+        notes: notes || undefined,
+        additional_emails: emailList.length > 0 ? emailList : undefined,
+        engineer_attachment_url: engineerAttachmentUrl || undefined,
+        customer_attachment_url: customerAttachmentUrl || undefined,
+        fee_acknowledged: true,
+      });
+
+      setShowExpediteDialog(false);
+      navigate('/dashboard', { state: { message: 'Expedite request submitted successfully. You will be notified once it is reviewed.' } });
+    } catch (err: any) {
+      setError(err.message || 'Failed to submit expedite request');
+    } finally {
+      setIsSubmittingExpedite(false);
+    }
+  };
+
+  const selectedProduct = products.find(p => p.id === productId);
+
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white shadow-sm border-b">
@@ -242,7 +309,33 @@ export default function BookingPage() {
       <main className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {error && (
           <div className="mb-6 p-4 bg-red-50 border border-red-200 text-red-700 rounded-lg">
-            {error}
+            <div className="flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 mt-0.5 flex-shrink-0" />
+              <div className="flex-1">
+                <p>{error}</p>
+                {showNoAvailabilityOptions && (
+                  <div className="mt-4 p-4 bg-white rounded-lg border border-gray-200">
+                    <h4 className="font-medium text-gray-900 mb-2">No availability found</h4>
+                    <p className="text-sm text-gray-600 mb-4">
+                      Would you like to submit an expedite request for this date and time? 
+                      {expediteFee > 0 && (
+                        <span className="font-medium"> An expedite fee of ${expediteFee.toFixed(2)} applies.</span>
+                      )}
+                    </p>
+                    <Button
+                      onClick={() => {
+                        setExpediteRequestedTime('09:00');
+                        setExpediteFeeAcknowledged(false);
+                        setShowExpediteDialog(true);
+                      }}
+                      className="bg-amber-600 hover:bg-amber-700"
+                    >
+                      Submit Expedite Request
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         )}
 
@@ -616,6 +709,99 @@ export default function BookingPage() {
           </Card>
         )}
       </main>
+
+      {/* Expedite Request Dialog */}
+      <Dialog open={showExpediteDialog} onOpenChange={setShowExpediteDialog}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Submit Expedite Request</DialogTitle>
+            <DialogDescription>
+              Request an expedited booking for {selectedDate}. Your request will be reviewed by an administrator.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="p-4 bg-gray-50 rounded-lg space-y-2">
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-600">Order Reference:</span>
+                <span className="font-medium">{orderReference}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-600">Customer:</span>
+                <span className="font-medium">{customerName}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-600">Product:</span>
+                <span className="font-medium">{selectedProduct?.name || '-'}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-600">Date:</span>
+                <span className="font-medium">{selectedDate}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-600">Duration:</span>
+                <span className="font-medium">{durationHours === 0 ? customDuration : durationHours} hours</span>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Preferred Time</Label>
+              <Input
+                type="time"
+                value={expediteRequestedTime}
+                onChange={(e) => setExpediteRequestedTime(e.target.value)}
+              />
+              <p className="text-xs text-gray-500">Select your preferred start time for this booking</p>
+            </div>
+
+            {expediteFee > 0 && (
+              <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                <div className="flex items-start gap-3">
+                  <AlertCircle className="w-5 h-5 text-amber-600 mt-0.5" />
+                  <div>
+                    <h4 className="font-medium text-amber-800">Expedite Fee: ${expediteFee.toFixed(2)}</h4>
+                    <p className="text-sm text-amber-700 mt-1">
+                      An expedite fee applies to this request. By submitting, you acknowledge and accept this fee.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="feeAcknowledged"
+                checked={expediteFeeAcknowledged}
+                onCheckedChange={(checked) => setExpediteFeeAcknowledged(checked as boolean)}
+              />
+              <Label htmlFor="feeAcknowledged" className="text-sm">
+                {expediteFee > 0 
+                  ? `I acknowledge and accept the expedite fee of $${expediteFee.toFixed(2)}`
+                  : 'I understand this is an expedite request and will be reviewed by an administrator'
+                }
+              </Label>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowExpediteDialog(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSubmitExpediteRequest}
+              disabled={!expediteFeeAcknowledged || isSubmittingExpedite}
+              className="bg-amber-600 hover:bg-amber-700"
+            >
+              {isSubmittingExpedite ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Submitting...
+                </>
+              ) : (
+                'Submit Expedite Request'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

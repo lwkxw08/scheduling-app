@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../services/api';
-import { Product, ChangeType, Engineer, CustomField, Fee, SystemConfig, User, DashboardStats, EmailTemplate, CalendarEventTemplate, TemplateType } from '../types';
+import { Product, ChangeType, Engineer, CustomField, Fee, SystemConfig, User, DashboardStats, EmailTemplate, CalendarEventTemplate, TemplateType, ExpediteRequest, ExpediteRequestStatus } from '../types';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
@@ -40,6 +40,8 @@ export default function AdminPage() {
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [productName, setProductName] = useState('');
   const [productDescription, setProductDescription] = useState('');
+  const [productExpediteFee, setProductExpediteFee] = useState('');
+  const [productExpediteContactEmails, setProductExpediteContactEmails] = useState('');
 
   const [showChangeTypeDialog, setShowChangeTypeDialog] = useState(false);
   const [editingChangeType, setEditingChangeType] = useState<ChangeType | null>(null);
@@ -112,6 +114,19 @@ export default function AdminPage() {
   const calendarBodyRef = useRef<HTMLTextAreaElement>(null);
   const [activeField, setActiveField] = useState<'emailSubject' | 'emailBody' | 'calendarTitle' | 'calendarBody' | null>(null);
 
+  // Expedite Requests state
+  const [expediteRequests, setExpediteRequests] = useState<ExpediteRequest[]>([]);
+  const [expediteStatusFilter, setExpediteStatusFilter] = useState<string>('all');
+  const [selectedExpediteRequest, setSelectedExpediteRequest] = useState<ExpediteRequest | null>(null);
+  const [showExpediteDetailDialog, setShowExpediteDetailDialog] = useState(false);
+  const [showApproveDialog, setShowApproveDialog] = useState(false);
+  const [showRejectDialog, setShowRejectDialog] = useState(false);
+  const [approveEngineerId, setApproveEngineerId] = useState<number | null>(null);
+  const [approveScheduledDate, setApproveScheduledDate] = useState('');
+  const [approveAdminNotes, setApproveAdminNotes] = useState('');
+  const [rejectAdminNotes, setRejectAdminNotes] = useState('');
+  const [isProcessingExpedite, setIsProcessingExpedite] = useState(false);
+
   useEffect(() => {
     if (user?.role !== 'admin') {
       navigate('/dashboard');
@@ -170,15 +185,22 @@ export default function AdminPage() {
 
   const handleSaveProduct = async () => {
     try {
+      const expediteFee = productExpediteFee ? parseFloat(productExpediteFee) : 0;
+      const expediteEmails = productExpediteContactEmails
+        ? productExpediteContactEmails.split(',').map(e => e.trim()).filter(e => e)
+        : [];
+      
       if (editingProduct) {
-        await api.updateProduct(editingProduct.id, productName, productDescription);
+        await api.updateProduct(editingProduct.id, productName, productDescription, expediteFee, expediteEmails);
       } else {
-        await api.createProduct(productName, productDescription);
+        await api.createProduct(productName, productDescription, expediteFee, expediteEmails);
       }
       setShowProductDialog(false);
       setEditingProduct(null);
       setProductName('');
       setProductDescription('');
+      setProductExpediteFee('');
+      setProductExpediteContactEmails('');
       loadAllData();
     } catch (err: any) {
       setError(err.message);
@@ -562,6 +584,74 @@ export default function AdminPage() {
 
   const nonEngineerUsers = users.filter(u => !engineers.some(e => e.user_id === u.id));
 
+  // Expedite Request handlers
+  const loadExpediteRequests = async () => {
+    try {
+      const filter = expediteStatusFilter === 'all' ? undefined : expediteStatusFilter;
+      const data = await api.getExpediteRequests(filter);
+      setExpediteRequests(data as ExpediteRequest[]);
+    } catch (err: any) {
+      console.error('Failed to load expedite requests:', err);
+    }
+  };
+
+  useEffect(() => {
+    loadExpediteRequests();
+  }, [expediteStatusFilter]);
+
+  const handleApproveExpediteRequest = async () => {
+    if (!selectedExpediteRequest || !approveEngineerId || !approveScheduledDate) return;
+    
+    setIsProcessingExpedite(true);
+    try {
+      await api.approveExpediteRequest(selectedExpediteRequest.id, {
+        assigned_engineer_id: approveEngineerId,
+        scheduled_date: approveScheduledDate,
+        admin_notes: approveAdminNotes || undefined,
+      });
+      setShowApproveDialog(false);
+      setShowExpediteDetailDialog(false);
+      setSelectedExpediteRequest(null);
+      setApproveEngineerId(null);
+      setApproveScheduledDate('');
+      setApproveAdminNotes('');
+      loadExpediteRequests();
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setIsProcessingExpedite(false);
+    }
+  };
+
+  const handleRejectExpediteRequest = async () => {
+    if (!selectedExpediteRequest) return;
+    
+    setIsProcessingExpedite(true);
+    try {
+      await api.rejectExpediteRequest(selectedExpediteRequest.id, {
+        admin_notes: rejectAdminNotes || undefined,
+      });
+      setShowRejectDialog(false);
+      setShowExpediteDetailDialog(false);
+      setSelectedExpediteRequest(null);
+      setRejectAdminNotes('');
+      loadExpediteRequests();
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setIsProcessingExpedite(false);
+    }
+  };
+
+  const getStatusBadgeColor = (status: ExpediteRequestStatus) => {
+    switch (status) {
+      case 'pending': return 'bg-yellow-100 text-yellow-800';
+      case 'approved': return 'bg-green-100 text-green-800';
+      case 'rejected': return 'bg-red-100 text-red-800';
+      default: return 'bg-gray-100 text-gray-800';
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -659,13 +749,14 @@ export default function AdminPage() {
         )}
 
         <Tabs defaultValue="products" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-9">
+          <TabsList className="grid w-full grid-cols-10">
             <TabsTrigger value="products">Products</TabsTrigger>
             <TabsTrigger value="change-types">Change Types</TabsTrigger>
             <TabsTrigger value="engineers">Engineers</TabsTrigger>
             <TabsTrigger value="roster-patterns">Rosters</TabsTrigger>
             <TabsTrigger value="fields">Custom Fields</TabsTrigger>
             <TabsTrigger value="fees">Fees</TabsTrigger>
+            <TabsTrigger value="expedite-requests">Expedite Requests</TabsTrigger>
             <TabsTrigger value="email-templates">Email Templates</TabsTrigger>
             <TabsTrigger value="calendar-templates">Calendar</TabsTrigger>
             <TabsTrigger value="config">Settings</TabsTrigger>
@@ -680,7 +771,7 @@ export default function AdminPage() {
                 </div>
                 <Dialog open={showProductDialog} onOpenChange={setShowProductDialog}>
                   <DialogTrigger asChild>
-                    <Button onClick={() => { setEditingProduct(null); setProductName(''); setProductDescription(''); }}>
+                    <Button onClick={() => { setEditingProduct(null); setProductName(''); setProductDescription(''); setProductExpediteFee(''); setProductExpediteContactEmails(''); }}>
                       <Plus className="w-4 h-4 mr-2" />
                       Add Product
                     </Button>
@@ -697,6 +788,31 @@ export default function AdminPage() {
                       <div className="space-y-2">
                         <Label>Description</Label>
                         <Textarea value={productDescription} onChange={(e) => setProductDescription(e.target.value)} />
+                      </div>
+                      <div className="border-t pt-4 mt-4">
+                        <h4 className="font-medium mb-3">Expedite Request Settings</h4>
+                        <div className="space-y-4">
+                          <div className="space-y-2">
+                            <Label>Expedite Fee</Label>
+                            <Input 
+                              type="number" 
+                              step="0.01"
+                              placeholder="0.00"
+                              value={productExpediteFee} 
+                              onChange={(e) => setProductExpediteFee(e.target.value)} 
+                            />
+                            <p className="text-sm text-muted-foreground">Fee charged for expedite requests on this product</p>
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Expedite Contact Emails</Label>
+                            <Input 
+                              placeholder="email1@example.com, email2@example.com"
+                              value={productExpediteContactEmails} 
+                              onChange={(e) => setProductExpediteContactEmails(e.target.value)} 
+                            />
+                            <p className="text-sm text-muted-foreground">Comma-separated email addresses to notify when expedite requests are submitted</p>
+                          </div>
+                        </div>
                       </div>
                     </div>
                     <DialogFooter>
@@ -730,6 +846,8 @@ export default function AdminPage() {
                               setEditingProduct(product);
                               setProductName(product.name);
                               setProductDescription(product.description || '');
+                              setProductExpediteFee(product.expedite_fee?.toString() || '');
+                              setProductExpediteContactEmails(product.expedite_contact_emails?.join(', ') || '');
                               setShowProductDialog(true);
                             }}
                           >
@@ -1545,6 +1663,295 @@ export default function AdminPage() {
                 )}
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value="expedite-requests">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between">
+                <div>
+                  <CardTitle>Expedite Requests</CardTitle>
+                  <CardDescription>Manage expedite requests from users when no availability exists</CardDescription>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Label className="text-sm">Filter:</Label>
+                  <Select value={expediteStatusFilter} onValueChange={setExpediteStatusFilter}>
+                    <SelectTrigger className="w-32">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All</SelectItem>
+                      <SelectItem value="pending">Pending</SelectItem>
+                      <SelectItem value="approved">Approved</SelectItem>
+                      <SelectItem value="rejected">Rejected</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {expediteRequests.length === 0 ? (
+                  <p className="text-center text-gray-500 py-8">No expedite requests found</p>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Order Ref</TableHead>
+                        <TableHead>Customer</TableHead>
+                        <TableHead>Product</TableHead>
+                        <TableHead>Requested Date</TableHead>
+                        <TableHead>Duration</TableHead>
+                        <TableHead>Fee</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Submitted</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {expediteRequests.map((request) => (
+                        <TableRow key={request.id}>
+                          <TableCell className="font-medium">{request.order_reference}</TableCell>
+                          <TableCell>{request.customer_name}</TableCell>
+                          <TableCell>{request.product?.name || '-'}</TableCell>
+                          <TableCell>{new Date(request.requested_date).toLocaleDateString()}</TableCell>
+                          <TableCell>{request.duration_hours}h</TableCell>
+                          <TableCell>${request.expedite_fee.toFixed(2)}</TableCell>
+                          <TableCell>
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusBadgeColor(request.status)}`}>
+                              {request.status}
+                            </span>
+                          </TableCell>
+                          <TableCell>{new Date(request.created_at).toLocaleDateString()}</TableCell>
+                          <TableCell className="text-right">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setSelectedExpediteRequest(request);
+                                setShowExpediteDetailDialog(true);
+                              }}
+                            >
+                              View
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Expedite Request Detail Dialog */}
+            <Dialog open={showExpediteDetailDialog} onOpenChange={setShowExpediteDetailDialog}>
+              <DialogContent className="max-w-2xl">
+                <DialogHeader>
+                  <DialogTitle>Expedite Request Details</DialogTitle>
+                </DialogHeader>
+                {selectedExpediteRequest && (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label className="text-sm text-gray-500">Order Reference</Label>
+                        <p className="font-medium">{selectedExpediteRequest.order_reference}</p>
+                      </div>
+                      <div>
+                        <Label className="text-sm text-gray-500">Customer Name</Label>
+                        <p className="font-medium">{selectedExpediteRequest.customer_name}</p>
+                      </div>
+                      <div>
+                        <Label className="text-sm text-gray-500">Product</Label>
+                        <p className="font-medium">{selectedExpediteRequest.product?.name || '-'}</p>
+                      </div>
+                      <div>
+                        <Label className="text-sm text-gray-500">Change Type</Label>
+                        <p className="font-medium">{selectedExpediteRequest.change_type?.name || '-'}</p>
+                      </div>
+                      <div>
+                        <Label className="text-sm text-gray-500">Requested Date</Label>
+                        <p className="font-medium">{new Date(selectedExpediteRequest.requested_date).toLocaleString()}</p>
+                      </div>
+                      <div>
+                        <Label className="text-sm text-gray-500">Duration</Label>
+                        <p className="font-medium">{selectedExpediteRequest.duration_hours} hours</p>
+                      </div>
+                      <div>
+                        <Label className="text-sm text-gray-500">Expedite Fee</Label>
+                        <p className="font-medium">${selectedExpediteRequest.expedite_fee.toFixed(2)}</p>
+                      </div>
+                      <div>
+                        <Label className="text-sm text-gray-500">Status</Label>
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusBadgeColor(selectedExpediteRequest.status)}`}>
+                          {selectedExpediteRequest.status}
+                        </span>
+                      </div>
+                      <div>
+                        <Label className="text-sm text-gray-500">Requester</Label>
+                        <p className="font-medium">{selectedExpediteRequest.requester?.full_name || '-'}</p>
+                      </div>
+                      <div>
+                        <Label className="text-sm text-gray-500">Submitted</Label>
+                        <p className="font-medium">{new Date(selectedExpediteRequest.created_at).toLocaleString()}</p>
+                      </div>
+                    </div>
+                    {selectedExpediteRequest.notes && (
+                      <div>
+                        <Label className="text-sm text-gray-500">Notes</Label>
+                        <p className="mt-1 p-2 bg-gray-50 rounded">{selectedExpediteRequest.notes}</p>
+                      </div>
+                    )}
+                    {selectedExpediteRequest.additional_emails && selectedExpediteRequest.additional_emails.length > 0 && (
+                      <div>
+                        <Label className="text-sm text-gray-500">Additional Email Recipients</Label>
+                        <p className="font-medium">{selectedExpediteRequest.additional_emails.join(', ')}</p>
+                      </div>
+                    )}
+                    {selectedExpediteRequest.admin_notes && (
+                      <div>
+                        <Label className="text-sm text-gray-500">Admin Notes</Label>
+                        <p className="mt-1 p-2 bg-gray-50 rounded">{selectedExpediteRequest.admin_notes}</p>
+                      </div>
+                    )}
+                    {selectedExpediteRequest.assigned_engineer && (
+                      <div>
+                        <Label className="text-sm text-gray-500">Assigned Engineer</Label>
+                        <p className="font-medium">{selectedExpediteRequest.assigned_engineer.user?.full_name || '-'}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+                <DialogFooter>
+                  {selectedExpediteRequest?.status === 'pending' && (
+                    <>
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          setShowRejectDialog(true);
+                        }}
+                      >
+                        Reject
+                      </Button>
+                      <Button
+                        onClick={() => {
+                          setApproveScheduledDate(selectedExpediteRequest.requested_date.slice(0, 16));
+                          setShowApproveDialog(true);
+                        }}
+                      >
+                        Approve
+                      </Button>
+                    </>
+                  )}
+                  <Button variant="ghost" onClick={() => setShowExpediteDetailDialog(false)}>
+                    Close
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+
+            {/* Approve Dialog */}
+            <Dialog open={showApproveDialog} onOpenChange={setShowApproveDialog}>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Approve Expedite Request</DialogTitle>
+                  <DialogDescription>
+                    Assign an engineer and confirm the scheduled date/time for this expedite request.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label>Assign Engineer</Label>
+                    <Select
+                      value={approveEngineerId?.toString() || ''}
+                      onValueChange={(val) => setApproveEngineerId(parseInt(val))}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select an engineer" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {engineers.map((eng) => (
+                          <SelectItem key={eng.id} value={eng.id.toString()}>
+                            {eng.user?.full_name || eng.calendar_email}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Scheduled Date & Time</Label>
+                    <Input
+                      type="datetime-local"
+                      value={approveScheduledDate}
+                      onChange={(e) => setApproveScheduledDate(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Admin Notes (optional)</Label>
+                    <Textarea
+                      value={approveAdminNotes}
+                      onChange={(e) => setApproveAdminNotes(e.target.value)}
+                      placeholder="Add any notes about this approval..."
+                    />
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setShowApproveDialog(false)}>
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={handleApproveExpediteRequest}
+                    disabled={!approveEngineerId || !approveScheduledDate || isProcessingExpedite}
+                  >
+                    {isProcessingExpedite ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Processing...
+                      </>
+                    ) : (
+                      'Approve & Create Booking'
+                    )}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+
+            {/* Reject Dialog */}
+            <Dialog open={showRejectDialog} onOpenChange={setShowRejectDialog}>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Reject Expedite Request</DialogTitle>
+                  <DialogDescription>
+                    Provide a reason for rejecting this expedite request.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label>Rejection Reason (optional)</Label>
+                    <Textarea
+                      value={rejectAdminNotes}
+                      onChange={(e) => setRejectAdminNotes(e.target.value)}
+                      placeholder="Explain why this request is being rejected..."
+                    />
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setShowRejectDialog(false)}>
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    onClick={handleRejectExpediteRequest}
+                    disabled={isProcessingExpedite}
+                  >
+                    {isProcessingExpedite ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Processing...
+                      </>
+                    ) : (
+                      'Reject Request'
+                    )}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           </TabsContent>
 
           <TabsContent value="config">
