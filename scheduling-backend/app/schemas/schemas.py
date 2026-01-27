@@ -303,6 +303,7 @@ class DashboardStats(BaseModel):
     confirmed_bookings: int
     total_engineers: int
     available_engineers: int
+    pending_expedite_requests: int
 
 
 class TemplateType(str, Enum):

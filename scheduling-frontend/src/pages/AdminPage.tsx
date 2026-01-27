@@ -16,9 +16,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Checkbox } from '../components/ui/checkbox';
 import { 
   ArrowLeft, Plus, Edit, Trash2, Users,
-  Calendar, UserCheck, Clock, Settings, Mail, CalendarDays, Upload, Loader2
+  Calendar, UserCheck, Clock, Settings, Mail, CalendarDays, Upload, Loader2, AlertCircle, Download, BarChart3, FileSpreadsheet
 } from 'lucide-react';
 import RosterPatternBuilder from '../components/RosterPatternBuilder';
+import * as XLSX from 'xlsx';
 
 export default function AdminPage() {
   const navigate = useNavigate();
@@ -113,6 +114,20 @@ export default function AdminPage() {
   const calendarTitleRef = useRef<HTMLInputElement>(null);
   const calendarBodyRef = useRef<HTMLTextAreaElement>(null);
   const [activeField, setActiveField] = useState<'emailSubject' | 'emailBody' | 'calendarTitle' | 'calendarBody' | null>(null);
+
+  // Tab state for programmatic navigation
+  const [activeTab, setActiveTab] = useState('products');
+
+  // Reporting state
+  const [reportType, setReportType] = useState<string>('bookings');
+  const [reportStartDate, setReportStartDate] = useState('');
+  const [reportEndDate, setReportEndDate] = useState('');
+  const [reportData, setReportData] = useState<any[]>([]);
+  const [revenueSummary, setRevenueSummary] = useState<any>(null);
+  const [isLoadingReport, setIsLoadingReport] = useState(false);
+  const [reportProductFilter, setReportProductFilter] = useState<string>('');
+  const [reportEngineerFilter, setReportEngineerFilter] = useState<string>('');
+  const [reportStatusFilter, setReportStatusFilter] = useState<string>('');
 
   // Expedite Requests state
   const [expediteRequests, setExpediteRequests] = useState<ExpediteRequest[]>([]);
@@ -652,6 +667,143 @@ export default function AdminPage() {
     }
   };
 
+  const loadReport = async () => {
+    setIsLoadingReport(true);
+    try {
+      const filters: any = {};
+      if (reportStartDate) filters.start_date = reportStartDate;
+      if (reportEndDate) filters.end_date = reportEndDate;
+      
+      let data: any[] = [];
+      
+      switch (reportType) {
+        case 'bookings':
+          if (reportProductFilter) filters.product_id = parseInt(reportProductFilter);
+          if (reportEngineerFilter) filters.engineer_id = parseInt(reportEngineerFilter);
+          if (reportStatusFilter) filters.status = reportStatusFilter;
+          data = await api.getBookingsReport(filters) as any[];
+          break;
+        case 'engineers':
+          data = await api.getEngineersUtilizationReport(filters) as any[];
+          break;
+        case 'products':
+          data = await api.getProductsSummaryReport(filters) as any[];
+          break;
+        case 'expedite':
+          data = await api.getExpediteRequestsSummaryReport(filters) as any[];
+          break;
+        case 'revenue':
+          const revenue = await api.getRevenueSummaryReport(filters);
+          setRevenueSummary(revenue);
+          data = [];
+          break;
+      }
+      
+      setReportData(data);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setIsLoadingReport(false);
+    }
+  };
+
+  const exportToExcel = () => {
+    if (reportData.length === 0 && reportType !== 'revenue') {
+      setError('No data to export');
+      return;
+    }
+    
+    let exportData: any[] = [];
+    let sheetName = 'Report';
+    
+    switch (reportType) {
+      case 'bookings':
+        sheetName = 'Bookings Report';
+        exportData = reportData.map(b => ({
+          'ID': b.id,
+          'Order Reference': b.order_reference,
+          'Customer Name': b.customer_name,
+          'Scheduled Date': b.scheduled_date,
+          'Duration (Hours)': b.duration_hours,
+          'Status': b.status,
+          'Product': b.product_name,
+          'Change Type': b.change_type_name,
+          'Engineer': b.engineer_name,
+          'Booker': b.booker_name,
+          'Cancellation Fee': b.cancellation_fee,
+          'Expedite Fee': b.expedite_fee,
+          'Created At': b.created_at,
+        }));
+        break;
+      case 'engineers':
+        sheetName = 'Engineer Utilization';
+        exportData = reportData.map(e => ({
+          'Engineer ID': e.engineer_id,
+          'Engineer Name': e.engineer_name,
+          'Calendar Email': e.calendar_email,
+          'Available': e.is_available ? 'Yes' : 'No',
+          'Total Bookings': e.total_bookings,
+          'Completed Bookings': e.completed_bookings,
+          'Total Hours': e.total_hours,
+        }));
+        break;
+      case 'products':
+        sheetName = 'Products Summary';
+        exportData = reportData.map(p => ({
+          'Product ID': p.product_id,
+          'Product Name': p.product_name,
+          'Total Bookings': p.total_bookings,
+          'Total Hours': p.total_hours,
+          'Expedite Fees': p.total_expedite_fees,
+          'Cancellation Fees': p.total_cancellation_fees,
+        }));
+        break;
+      case 'expedite':
+        sheetName = 'Expedite Requests';
+        exportData = reportData.map(r => ({
+          'ID': r.id,
+          'Order Reference': r.order_reference,
+          'Customer Name': r.customer_name,
+          'Requested Date': r.requested_date,
+          'Duration (Hours)': r.duration_hours,
+          'Status': r.status,
+          'Expedite Fee': r.expedite_fee,
+          'Fee Acknowledged': r.fee_acknowledged ? 'Yes' : 'No',
+          'Product': r.product_name,
+          'Change Type': r.change_type_name,
+          'Requester': r.requester_name,
+          'Assigned Engineer': r.assigned_engineer_name,
+          'Admin Notes': r.admin_notes,
+          'Created At': r.created_at,
+        }));
+        break;
+      case 'revenue':
+        sheetName = 'Revenue Summary';
+        if (revenueSummary) {
+          exportData = [
+            { 'Metric': 'Total Bookings', 'Value': revenueSummary.total_bookings },
+            { 'Metric': 'Total Expedite Fees', 'Value': revenueSummary.total_expedite_fees },
+            { 'Metric': 'Total Cancellation Fees', 'Value': revenueSummary.total_cancellation_fees },
+            { 'Metric': 'Approved Expedite Requests', 'Value': revenueSummary.approved_expedite_requests },
+            { 'Metric': 'Expedite Request Fees', 'Value': revenueSummary.expedite_request_fees },
+          ];
+          if (revenueSummary.status_breakdown) {
+            Object.entries(revenueSummary.status_breakdown).forEach(([status, count]) => {
+              exportData.push({ 'Metric': `Bookings - ${status}`, 'Value': count });
+            });
+          }
+        }
+        break;
+    }
+    
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+    
+    const dateStr = new Date().toISOString().split('T')[0];
+    XLSX.writeFile(workbook, `${sheetName.replace(/\s+/g, '_')}_${dateStr}.xlsx`);
+  };
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -745,19 +897,34 @@ export default function AdminPage() {
                 </div>
               </CardContent>
             </Card>
+            <Card 
+              className="cursor-pointer hover:shadow-md transition-shadow border-amber-200 bg-amber-50"
+              onClick={() => setActiveTab('expedite-requests')}
+            >
+              <CardContent className="pt-6">
+                <div className="flex items-center">
+                  <AlertCircle className="w-8 h-8 text-amber-600 mr-3" />
+                  <div>
+                    <p className="text-2xl font-bold">{stats.pending_expedite_requests}</p>
+                    <p className="text-sm text-gray-500">Expedite Requests</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
           </div>
         )}
 
-        <Tabs defaultValue="products" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-10">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+          <TabsList className="grid w-full grid-cols-11">
             <TabsTrigger value="products">Products</TabsTrigger>
             <TabsTrigger value="change-types">Change Types</TabsTrigger>
             <TabsTrigger value="engineers">Engineers</TabsTrigger>
             <TabsTrigger value="roster-patterns">Rosters</TabsTrigger>
             <TabsTrigger value="fields">Custom Fields</TabsTrigger>
             <TabsTrigger value="fees">Fees</TabsTrigger>
-            <TabsTrigger value="expedite-requests">Expedite Requests</TabsTrigger>
-            <TabsTrigger value="email-templates">Email Templates</TabsTrigger>
+            <TabsTrigger value="expedite-requests">Expedite</TabsTrigger>
+            <TabsTrigger value="reports">Reports</TabsTrigger>
+            <TabsTrigger value="email-templates">Email</TabsTrigger>
             <TabsTrigger value="calendar-templates">Calendar</TabsTrigger>
             <TabsTrigger value="config">Settings</TabsTrigger>
           </TabsList>
@@ -1237,6 +1404,272 @@ export default function AdminPage() {
             </Card>
           </TabsContent>
 
+          <TabsContent value="reports">
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="flex items-center gap-2">
+                      <BarChart3 className="w-5 h-5" />
+                      MIS Reports
+                    </CardTitle>
+                    <CardDescription>Generate and export reports for bookings, engineers, products, and revenue</CardDescription>
+                  </div>
+                  <Button onClick={exportToExcel} disabled={reportData.length === 0 && reportType !== 'revenue'}>
+                    <FileSpreadsheet className="w-4 h-4 mr-2" />
+                    Export to Excel
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="space-y-2">
+                    <Label>Report Type</Label>
+                    <Select value={reportType} onValueChange={setReportType}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="bookings">Bookings Report</SelectItem>
+                        <SelectItem value="engineers">Engineer Utilization</SelectItem>
+                        <SelectItem value="products">Products Summary</SelectItem>
+                        <SelectItem value="expedite">Expedite Requests</SelectItem>
+                        <SelectItem value="revenue">Revenue Summary</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Start Date</Label>
+                    <Input type="date" value={reportStartDate} onChange={(e) => setReportStartDate(e.target.value)} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>End Date</Label>
+                    <Input type="date" value={reportEndDate} onChange={(e) => setReportEndDate(e.target.value)} />
+                  </div>
+                  <div className="space-y-2 flex items-end">
+                    <Button onClick={loadReport} disabled={isLoadingReport} className="w-full">
+                      {isLoadingReport ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Download className="w-4 h-4 mr-2" />}
+                      Generate Report
+                    </Button>
+                  </div>
+                </div>
+
+                {reportType === 'bookings' && (
+                  <div className="grid grid-cols-3 gap-4 p-4 bg-gray-50 rounded-lg">
+                    <div className="space-y-2">
+                      <Label>Product Filter</Label>
+                      <Select value={reportProductFilter} onValueChange={setReportProductFilter}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="All Products" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="">All Products</SelectItem>
+                          {products.map(p => (
+                            <SelectItem key={p.id} value={p.id.toString()}>{p.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Engineer Filter</Label>
+                      <Select value={reportEngineerFilter} onValueChange={setReportEngineerFilter}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="All Engineers" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="">All Engineers</SelectItem>
+                          {engineers.map(e => (
+                            <SelectItem key={e.id} value={e.id.toString()}>{e.user?.full_name || e.calendar_email}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Status Filter</Label>
+                      <Select value={reportStatusFilter} onValueChange={setReportStatusFilter}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="All Statuses" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="">All Statuses</SelectItem>
+                          <SelectItem value="pending">Pending</SelectItem>
+                          <SelectItem value="confirmed">Confirmed</SelectItem>
+                          <SelectItem value="completed">Completed</SelectItem>
+                          <SelectItem value="cancelled">Cancelled</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                )}
+
+                {reportType === 'revenue' && revenueSummary && (
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                    <Card>
+                      <CardContent className="pt-6">
+                        <div className="text-2xl font-bold">{revenueSummary.total_bookings}</div>
+                        <p className="text-sm text-gray-500">Total Bookings</p>
+                      </CardContent>
+                    </Card>
+                    <Card>
+                      <CardContent className="pt-6">
+                        <div className="text-2xl font-bold text-green-600">${revenueSummary.total_expedite_fees?.toFixed(2) || '0.00'}</div>
+                        <p className="text-sm text-gray-500">Expedite Fees</p>
+                      </CardContent>
+                    </Card>
+                    <Card>
+                      <CardContent className="pt-6">
+                        <div className="text-2xl font-bold text-red-600">${revenueSummary.total_cancellation_fees?.toFixed(2) || '0.00'}</div>
+                        <p className="text-sm text-gray-500">Cancellation Fees</p>
+                      </CardContent>
+                    </Card>
+                    <Card>
+                      <CardContent className="pt-6">
+                        <div className="text-2xl font-bold">{revenueSummary.approved_expedite_requests}</div>
+                        <p className="text-sm text-gray-500">Approved Expedite Requests</p>
+                      </CardContent>
+                    </Card>
+                    <Card>
+                      <CardContent className="pt-6">
+                        <div className="text-2xl font-bold text-blue-600">${revenueSummary.expedite_request_fees?.toFixed(2) || '0.00'}</div>
+                        <p className="text-sm text-gray-500">Expedite Request Fees</p>
+                      </CardContent>
+                    </Card>
+                    {revenueSummary.status_breakdown && (
+                      <Card>
+                        <CardContent className="pt-6">
+                          <div className="text-sm font-medium mb-2">Status Breakdown</div>
+                          {Object.entries(revenueSummary.status_breakdown).map(([status, count]) => (
+                            <div key={status} className="flex justify-between text-sm">
+                              <span className="capitalize">{status}</span>
+                              <span className="font-medium">{count as number}</span>
+                            </div>
+                          ))}
+                        </CardContent>
+                      </Card>
+                    )}
+                  </div>
+                )}
+
+                {reportType !== 'revenue' && reportData.length > 0 && (
+                  <div className="border rounded-lg overflow-hidden">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          {reportType === 'bookings' && (
+                            <>
+                              <TableHead>Order Ref</TableHead>
+                              <TableHead>Customer</TableHead>
+                              <TableHead>Date</TableHead>
+                              <TableHead>Duration</TableHead>
+                              <TableHead>Status</TableHead>
+                              <TableHead>Product</TableHead>
+                              <TableHead>Engineer</TableHead>
+                              <TableHead>Fees</TableHead>
+                            </>
+                          )}
+                          {reportType === 'engineers' && (
+                            <>
+                              <TableHead>Engineer</TableHead>
+                              <TableHead>Email</TableHead>
+                              <TableHead>Available</TableHead>
+                              <TableHead>Total Bookings</TableHead>
+                              <TableHead>Completed</TableHead>
+                              <TableHead>Total Hours</TableHead>
+                            </>
+                          )}
+                          {reportType === 'products' && (
+                            <>
+                              <TableHead>Product</TableHead>
+                              <TableHead>Total Bookings</TableHead>
+                              <TableHead>Total Hours</TableHead>
+                              <TableHead>Expedite Fees</TableHead>
+                              <TableHead>Cancellation Fees</TableHead>
+                            </>
+                          )}
+                          {reportType === 'expedite' && (
+                            <>
+                              <TableHead>Order Ref</TableHead>
+                              <TableHead>Customer</TableHead>
+                              <TableHead>Requested Date</TableHead>
+                              <TableHead>Status</TableHead>
+                              <TableHead>Product</TableHead>
+                              <TableHead>Fee</TableHead>
+                              <TableHead>Assigned Engineer</TableHead>
+                            </>
+                          )}
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {reportType === 'bookings' && reportData.map((b: any) => (
+                          <TableRow key={b.id}>
+                            <TableCell className="font-medium">{b.order_reference}</TableCell>
+                            <TableCell>{b.customer_name}</TableCell>
+                            <TableCell>{b.scheduled_date ? new Date(b.scheduled_date).toLocaleDateString() : '-'}</TableCell>
+                            <TableCell>{b.duration_hours}h</TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className={
+                                b.status === 'confirmed' ? 'bg-green-100 text-green-800' :
+                                b.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                                b.status === 'completed' ? 'bg-blue-100 text-blue-800' :
+                                'bg-red-100 text-red-800'
+                              }>{b.status}</Badge>
+                            </TableCell>
+                            <TableCell>{b.product_name}</TableCell>
+                            <TableCell>{b.engineer_name}</TableCell>
+                            <TableCell>${((b.expedite_fee || 0) + (b.cancellation_fee || 0)).toFixed(2)}</TableCell>
+                          </TableRow>
+                        ))}
+                        {reportType === 'engineers' && reportData.map((e: any) => (
+                          <TableRow key={e.engineer_id}>
+                            <TableCell className="font-medium">{e.engineer_name}</TableCell>
+                            <TableCell>{e.calendar_email}</TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className={e.is_available ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}>
+                                {e.is_available ? 'Yes' : 'No'}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>{e.total_bookings}</TableCell>
+                            <TableCell>{e.completed_bookings}</TableCell>
+                            <TableCell>{e.total_hours}h</TableCell>
+                          </TableRow>
+                        ))}
+                        {reportType === 'products' && reportData.map((p: any) => (
+                          <TableRow key={p.product_id}>
+                            <TableCell className="font-medium">{p.product_name}</TableCell>
+                            <TableCell>{p.total_bookings}</TableCell>
+                            <TableCell>{p.total_hours}h</TableCell>
+                            <TableCell>${p.total_expedite_fees?.toFixed(2) || '0.00'}</TableCell>
+                            <TableCell>${p.total_cancellation_fees?.toFixed(2) || '0.00'}</TableCell>
+                          </TableRow>
+                        ))}
+                        {reportType === 'expedite' && reportData.map((r: any) => (
+                          <TableRow key={r.id}>
+                            <TableCell className="font-medium">{r.order_reference}</TableCell>
+                            <TableCell>{r.customer_name}</TableCell>
+                            <TableCell>{r.requested_date ? new Date(r.requested_date).toLocaleDateString() : '-'}</TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className={getStatusBadgeColor(r.status)}>{r.status}</Badge>
+                            </TableCell>
+                            <TableCell>{r.product_name}</TableCell>
+                            <TableCell>${r.expedite_fee?.toFixed(2) || '0.00'}</TableCell>
+                            <TableCell>{r.assigned_engineer_name || '-'}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+
+                {reportType !== 'revenue' && reportData.length === 0 && !isLoadingReport && (
+                  <div className="text-center py-12 text-gray-500">
+                    <BarChart3 className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                    <p>Select a report type and date range, then click "Generate Report" to view data</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
           <TabsContent value="email-templates">
             <Card>
               <CardHeader className="flex flex-row items-center justify-between">
@@ -1263,7 +1696,7 @@ export default function AdminPage() {
                         <div className="space-y-2">
                           <Label>Template Name</Label>
                           <Input 
-                            value={emailTemplateName} 
+                            value={emailTemplateName}
                             onChange={(e) => setEmailTemplateName(e.target.value)}
                             placeholder="e.g., Booking Confirmation"
                           />

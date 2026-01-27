@@ -569,6 +569,51 @@ class ApiService {
       body: JSON.stringify(data),
     });
   }
+
+  // Reporting endpoints
+  async getBookingsReport(filters: {
+    start_date?: string;
+    end_date?: string;
+    status?: string;
+    product_id?: number;
+    engineer_id?: number;
+  } = {}) {
+    const params = new URLSearchParams();
+    if (filters.start_date) params.append('start_date', filters.start_date);
+    if (filters.end_date) params.append('end_date', filters.end_date);
+    if (filters.status) params.append('status', filters.status);
+    if (filters.product_id) params.append('product_id', filters.product_id.toString());
+    if (filters.engineer_id) params.append('engineer_id', filters.engineer_id.toString());
+    return this.request(`/admin/reports/bookings?${params.toString()}`);
+  }
+
+  async getEngineersUtilizationReport(filters: { start_date?: string; end_date?: string } = {}) {
+    const params = new URLSearchParams();
+    if (filters.start_date) params.append('start_date', filters.start_date);
+    if (filters.end_date) params.append('end_date', filters.end_date);
+    return this.request(`/admin/reports/engineers-utilization?${params.toString()}`);
+  }
+
+  async getProductsSummaryReport(filters: { start_date?: string; end_date?: string } = {}) {
+    const params = new URLSearchParams();
+    if (filters.start_date) params.append('start_date', filters.start_date);
+    if (filters.end_date) params.append('end_date', filters.end_date);
+    return this.request(`/admin/reports/products-summary?${params.toString()}`);
+  }
+
+  async getExpediteRequestsSummaryReport(filters: { start_date?: string; end_date?: string } = {}) {
+    const params = new URLSearchParams();
+    if (filters.start_date) params.append('start_date', filters.start_date);
+    if (filters.end_date) params.append('end_date', filters.end_date);
+    return this.request(`/admin/reports/expedite-requests-summary?${params.toString()}`);
+  }
+
+  async getRevenueSummaryReport(filters: { start_date?: string; end_date?: string } = {}) {
+    const params = new URLSearchParams();
+    if (filters.start_date) params.append('start_date', filters.start_date);
+    if (filters.end_date) params.append('end_date', filters.end_date);
+    return this.request(`/admin/reports/revenue-summary?${params.toString()}`);
+  }
 }
 
 export const api = new ApiService();

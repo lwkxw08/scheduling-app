@@ -73,13 +73,17 @@ async def get_dashboard_stats(
     available_engineers = await db.execute(
         select(func.count(Engineer.id)).where(Engineer.is_available == True)
     )
+    pending_expedite_requests = await db.execute(
+        select(func.count(ExpediteRequest.id)).where(ExpediteRequest.status == ExpediteRequestStatus.PENDING)
+    )
     
     return DashboardStats(
         total_bookings=total_bookings.scalar() or 0,
         pending_bookings=pending_bookings.scalar() or 0,
         confirmed_bookings=confirmed_bookings.scalar() or 0,
         total_engineers=total_engineers.scalar() or 0,
-        available_engineers=available_engineers.scalar() or 0
+        available_engineers=available_engineers.scalar() or 0,
+        pending_expedite_requests=pending_expedite_requests.scalar() or 0
     )
 
 
@@ -1485,3 +1489,275 @@ async def reject_expedite_request(
     await db.commit()
     await db.refresh(expedite_request)
     return ExpediteRequestResponse.model_validate(expedite_request)
+
+
+# ==================== REPORTING ENDPOINTS ====================
+
+@router.get("/reports/bookings")
+async def get_bookings_report(
+    start_date: str = None,
+    end_date: str = None,
+    status: str = None,
+    product_id: int = None,
+    engineer_id: int = None,
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get bookings report with optional filters"""
+    await get_admin_user(authorization, db)
+    
+    from datetime import datetime
+    
+    query = select(Booking).options(
+        selectinload(Booking.engineer).selectinload(Engineer.user),
+        selectinload(Booking.product),
+        selectinload(Booking.change_type),
+        selectinload(Booking.booker)
+    )
+    
+    if start_date:
+        query = query.where(Booking.scheduled_date >= datetime.fromisoformat(start_date))
+    if end_date:
+        query = query.where(Booking.scheduled_date <= datetime.fromisoformat(end_date))
+    if status:
+        query = query.where(Booking.status == status)
+    if product_id:
+        query = query.where(Booking.product_id == product_id)
+    if engineer_id:
+        query = query.where(Booking.engineer_id == engineer_id)
+    
+    query = query.order_by(Booking.scheduled_date.desc())
+    result = await db.execute(query)
+    bookings = result.scalars().all()
+    
+    return [{
+        "id": b.id,
+        "order_reference": b.order_reference,
+        "customer_name": b.customer_name,
+        "scheduled_date": b.scheduled_date.isoformat() if b.scheduled_date else None,
+        "duration_hours": b.duration_hours,
+        "status": b.status.value if hasattr(b.status, 'value') else b.status,
+        "product_name": b.product.name if b.product else None,
+        "change_type_name": b.change_type.name if b.change_type else None,
+        "engineer_name": b.engineer.user.full_name if b.engineer and b.engineer.user else None,
+        "booker_name": b.booker.full_name if b.booker else None,
+        "cancellation_fee": b.cancellation_fee,
+        "expedite_fee": b.expedite_fee,
+        "created_at": b.created_at.isoformat() if b.created_at else None,
+    } for b in bookings]
+
+
+@router.get("/reports/engineers-utilization")
+async def get_engineers_utilization_report(
+    start_date: str = None,
+    end_date: str = None,
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get engineer utilization report"""
+    await get_admin_user(authorization, db)
+    
+    from datetime import datetime
+    
+    # Get all engineers
+    engineers_result = await db.execute(
+        select(Engineer).options(selectinload(Engineer.user))
+    )
+    engineers = engineers_result.scalars().all()
+    
+    report = []
+    for eng in engineers:
+        # Count bookings for this engineer
+        booking_query = select(func.count(Booking.id), func.sum(Booking.duration_hours)).where(
+            Booking.engineer_id == eng.id,
+            Booking.status.in_([BookingStatus.CONFIRMED, BookingStatus.COMPLETED])
+        )
+        
+        if start_date:
+            booking_query = booking_query.where(Booking.scheduled_date >= datetime.fromisoformat(start_date))
+        if end_date:
+            booking_query = booking_query.where(Booking.scheduled_date <= datetime.fromisoformat(end_date))
+        
+        result = await db.execute(booking_query)
+        row = result.one()
+        booking_count = row[0] or 0
+        total_hours = float(row[1] or 0)
+        
+        # Count completed bookings
+        completed_query = select(func.count(Booking.id)).where(
+            Booking.engineer_id == eng.id,
+            Booking.status == BookingStatus.COMPLETED
+        )
+        if start_date:
+            completed_query = completed_query.where(Booking.scheduled_date >= datetime.fromisoformat(start_date))
+        if end_date:
+            completed_query = completed_query.where(Booking.scheduled_date <= datetime.fromisoformat(end_date))
+        
+        completed_result = await db.execute(completed_query)
+        completed_count = completed_result.scalar() or 0
+        
+        report.append({
+            "engineer_id": eng.id,
+            "engineer_name": eng.user.full_name if eng.user else f"Engineer {eng.id}",
+            "calendar_email": eng.calendar_email,
+            "is_available": eng.is_available,
+            "total_bookings": booking_count,
+            "completed_bookings": completed_count,
+            "total_hours": total_hours,
+        })
+    
+    return report
+
+
+@router.get("/reports/products-summary")
+async def get_products_summary_report(
+    start_date: str = None,
+    end_date: str = None,
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get products summary report"""
+    await get_admin_user(authorization, db)
+    
+    from datetime import datetime
+    
+    # Get all products
+    products_result = await db.execute(select(Product).where(Product.is_active == True))
+    products = products_result.scalars().all()
+    
+    report = []
+    for prod in products:
+        # Count bookings for this product
+        booking_query = select(
+            func.count(Booking.id),
+            func.sum(Booking.duration_hours),
+            func.sum(Booking.expedite_fee),
+            func.sum(Booking.cancellation_fee)
+        ).where(Booking.product_id == prod.id)
+        
+        if start_date:
+            booking_query = booking_query.where(Booking.scheduled_date >= datetime.fromisoformat(start_date))
+        if end_date:
+            booking_query = booking_query.where(Booking.scheduled_date <= datetime.fromisoformat(end_date))
+        
+        result = await db.execute(booking_query)
+        row = result.one()
+        
+        report.append({
+            "product_id": prod.id,
+            "product_name": prod.name,
+            "total_bookings": row[0] or 0,
+            "total_hours": float(row[1] or 0),
+            "total_expedite_fees": float(row[2] or 0),
+            "total_cancellation_fees": float(row[3] or 0),
+        })
+    
+    return report
+
+
+@router.get("/reports/expedite-requests-summary")
+async def get_expedite_requests_summary_report(
+    start_date: str = None,
+    end_date: str = None,
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get expedite requests summary report"""
+    await get_admin_user(authorization, db)
+    
+    from datetime import datetime
+    
+    query = select(ExpediteRequest).options(
+        selectinload(ExpediteRequest.requester),
+        selectinload(ExpediteRequest.product),
+        selectinload(ExpediteRequest.change_type),
+        selectinload(ExpediteRequest.assigned_engineer).selectinload(Engineer.user)
+    )
+    
+    if start_date:
+        query = query.where(ExpediteRequest.created_at >= datetime.fromisoformat(start_date))
+    if end_date:
+        query = query.where(ExpediteRequest.created_at <= datetime.fromisoformat(end_date))
+    
+    query = query.order_by(ExpediteRequest.created_at.desc())
+    result = await db.execute(query)
+    requests = result.scalars().all()
+    
+    return [{
+        "id": r.id,
+        "order_reference": r.order_reference,
+        "customer_name": r.customer_name,
+        "requested_date": r.requested_date.isoformat() if r.requested_date else None,
+        "duration_hours": r.duration_hours,
+        "status": r.status.value if hasattr(r.status, 'value') else r.status,
+        "expedite_fee": r.expedite_fee,
+        "fee_acknowledged": r.fee_acknowledged,
+        "product_name": r.product.name if r.product else None,
+        "change_type_name": r.change_type.name if r.change_type else None,
+        "requester_name": r.requester.full_name if r.requester else None,
+        "assigned_engineer_name": r.assigned_engineer.user.full_name if r.assigned_engineer and r.assigned_engineer.user else None,
+        "admin_notes": r.admin_notes,
+        "created_at": r.created_at.isoformat() if r.created_at else None,
+    } for r in requests]
+
+
+@router.get("/reports/revenue-summary")
+async def get_revenue_summary_report(
+    start_date: str = None,
+    end_date: str = None,
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get revenue summary report"""
+    await get_admin_user(authorization, db)
+    
+    from datetime import datetime
+    
+    # Get booking revenue
+    booking_query = select(
+        func.count(Booking.id),
+        func.sum(Booking.expedite_fee),
+        func.sum(Booking.cancellation_fee)
+    )
+    
+    if start_date:
+        booking_query = booking_query.where(Booking.scheduled_date >= datetime.fromisoformat(start_date))
+    if end_date:
+        booking_query = booking_query.where(Booking.scheduled_date <= datetime.fromisoformat(end_date))
+    
+    result = await db.execute(booking_query)
+    row = result.one()
+    
+    # Get status breakdown
+    status_query = select(Booking.status, func.count(Booking.id))
+    if start_date:
+        status_query = status_query.where(Booking.scheduled_date >= datetime.fromisoformat(start_date))
+    if end_date:
+        status_query = status_query.where(Booking.scheduled_date <= datetime.fromisoformat(end_date))
+    status_query = status_query.group_by(Booking.status)
+    
+    status_result = await db.execute(status_query)
+    status_breakdown = {str(s[0].value if hasattr(s[0], 'value') else s[0]): s[1] for s in status_result.all()}
+    
+    # Get expedite request stats
+    expedite_query = select(
+        func.count(ExpediteRequest.id),
+        func.sum(ExpediteRequest.expedite_fee)
+    ).where(ExpediteRequest.status == ExpediteRequestStatus.APPROVED)
+    
+    if start_date:
+        expedite_query = expedite_query.where(ExpediteRequest.created_at >= datetime.fromisoformat(start_date))
+    if end_date:
+        expedite_query = expedite_query.where(ExpediteRequest.created_at <= datetime.fromisoformat(end_date))
+    
+    expedite_result = await db.execute(expedite_query)
+    expedite_row = expedite_result.one()
+    
+    return {
+        "total_bookings": row[0] or 0,
+        "total_expedite_fees": float(row[1] or 0),
+        "total_cancellation_fees": float(row[2] or 0),
+        "status_breakdown": status_breakdown,
+        "approved_expedite_requests": expedite_row[0] or 0,
+        "expedite_request_fees": float(expedite_row[1] or 0),
+    }

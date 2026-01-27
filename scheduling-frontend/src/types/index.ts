@@ -129,6 +129,7 @@ export interface DashboardStats {
   confirmed_bookings: number;
   total_engineers: number;
   available_engineers: number;
+  pending_expedite_requests: number;
 }
 
 export type TemplateType = 'confirmation' | 'amendment' | 'cancellation' | 'reminder';
