@@ -83,8 +83,9 @@ async def create_booking(
 ):
     user = await get_current_user(authorization, db)
     
-    # Check booking advance limit (skip for admins)
+    # Check booking settings (skip for admins)
     if user.role != "admin":
+        # Check booking advance limit
         advance_limit = await get_config_value(db, "booking_advance_limit_days", "0")
         if advance_limit and advance_limit != "0":
             try:
@@ -98,6 +99,34 @@ async def create_booking(
                         )
             except ValueError:
                 pass  # Invalid config value, skip validation
+        
+        # Check minimum booking notice
+        min_notice = await get_config_value(db, "min_booking_notice_hours", "0")
+        if min_notice and min_notice != "0":
+            try:
+                min_hours = int(min_notice)
+                if min_hours > 0:
+                    min_date = datetime.now() + timedelta(hours=min_hours)
+                    if booking_data.scheduled_date < min_date:
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail=f"Bookings must be made at least {min_hours} hours in advance"
+                        )
+            except ValueError:
+                pass
+    
+    # Check maximum booking duration (applies to all users)
+    max_duration = await get_config_value(db, "max_booking_duration_hours", "0")
+    if max_duration and max_duration != "0":
+        try:
+            max_hours = float(max_duration)
+            if max_hours > 0 and booking_data.duration_hours > max_hours:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Booking duration cannot exceed {max_hours} hours"
+                )
+        except ValueError:
+            pass
     
     result = await db.execute(
         select(Engineer)
