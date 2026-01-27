@@ -717,6 +717,10 @@ class ApiService {
   async sendTestEmail(toEmail: string) {
     return this.request<{ success: boolean; message: string }>(`/admin/smtp/send-test-email?to_email=${encodeURIComponent(toEmail)}`, { method: 'POST' });
   }
+
+  async getBookingSettings() {
+    return this.request<{ booking_advance_limit_days: number }>('/bookings/booking-settings');
+  }
 }
 
 export const api = new ApiService();

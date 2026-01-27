@@ -2563,10 +2563,11 @@ export default function AdminPage() {
                             <SelectValue placeholder="Select setting" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="amendment_deadline_hours">Amendment Deadline (hours)</SelectItem>
-                            <SelectItem value="cancellation_deadline_hours">Cancellation Deadline (hours)</SelectItem>
-                            <SelectItem value="min_booking_notice_hours">Minimum Booking Notice (hours)</SelectItem>
-                            <SelectItem value="max_booking_duration_hours">Maximum Booking Duration (hours)</SelectItem>
+                                                        <SelectItem value="amendment_deadline_hours">Amendment Deadline (hours)</SelectItem>
+                                                        <SelectItem value="cancellation_deadline_hours">Cancellation Deadline (hours)</SelectItem>
+                                                        <SelectItem value="min_booking_notice_hours">Minimum Booking Notice (hours)</SelectItem>
+                                                        <SelectItem value="max_booking_duration_hours">Maximum Booking Duration (hours)</SelectItem>
+                                                        <SelectItem value="booking_advance_limit_days">Booking Advance Limit (days)</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>

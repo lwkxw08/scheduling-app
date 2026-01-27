@@ -83,6 +83,22 @@ async def create_booking(
 ):
     user = await get_current_user(authorization, db)
     
+    # Check booking advance limit (skip for admins)
+    if user.role != "admin":
+        advance_limit = await get_config_value(db, "booking_advance_limit_days", "0")
+        if advance_limit and advance_limit != "0":
+            try:
+                max_days = int(advance_limit)
+                if max_days > 0:
+                    max_date = datetime.now() + timedelta(days=max_days)
+                    if booking_data.scheduled_date > max_date:
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail=f"Bookings cannot be made more than {max_days} days in advance"
+                        )
+            except ValueError:
+                pass  # Invalid config value, skip validation
+    
     result = await db.execute(
         select(Engineer)
         .where(Engineer.id == booking_data.engineer_id)
@@ -483,4 +499,19 @@ async def get_product_expedite_fee(
         "product_id": product.id,
         "product_name": product.name,
         "expedite_fee": product.expedite_fee or 0.0
+    }
+
+
+@router.get("/booking-settings")
+async def get_booking_settings(
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get public booking settings like advance limit"""
+    await get_current_user(authorization, db)
+    
+    advance_limit = await get_config_value(db, "booking_advance_limit_days", "0")
+    
+    return {
+        "booking_advance_limit_days": int(advance_limit) if advance_limit and advance_limit != "0" else 0
     }
