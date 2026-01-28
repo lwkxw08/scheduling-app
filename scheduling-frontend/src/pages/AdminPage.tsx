@@ -2548,19 +2548,19 @@ export default function AdminPage() {
 
                             <div className="space-y-2">
                               <Label>Required Booking Status {emailRuleTriggerType === 'status_is' ? '*' : '(Optional)'}</Label>
-                              <Select value={emailRuleConditionStatus} onValueChange={setEmailRuleConditionStatus}>
-                                <SelectTrigger>
-                                  <SelectValue placeholder="Any status" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="">Any status</SelectItem>
-                                  <SelectItem value="pending">Pending</SelectItem>
-                                  <SelectItem value="confirmed">Confirmed</SelectItem>
-                                  <SelectItem value="in_progress">In Progress</SelectItem>
-                                  <SelectItem value="completed">Completed</SelectItem>
-                                  <SelectItem value="cancelled">Cancelled</SelectItem>
-                                </SelectContent>
-                              </Select>
+                                                            <Select value={emailRuleConditionStatus || 'any'} onValueChange={(v) => setEmailRuleConditionStatus(v === 'any' ? '' : v)}>
+                                                              <SelectTrigger>
+                                                                <SelectValue placeholder="Any status" />
+                                                              </SelectTrigger>
+                                                              <SelectContent>
+                                                                <SelectItem value="any">Any status</SelectItem>
+                                                                <SelectItem value="pending">Pending</SelectItem>
+                                                                <SelectItem value="confirmed">Confirmed</SelectItem>
+                                                                <SelectItem value="in_progress">In Progress</SelectItem>
+                                                                <SelectItem value="completed">Completed</SelectItem>
+                                                                <SelectItem value="cancelled">Cancelled</SelectItem>
+                                                              </SelectContent>
+                                                            </Select>
                               <p className="text-xs text-gray-500">
                                 Only send email if booking has this status
                               </p>
