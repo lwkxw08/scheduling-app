@@ -246,7 +246,10 @@ async def create_booking(
     
     additional_emails_list = []
     if booking_data.additional_emails:
-        additional_emails_list = [e.strip() for e in booking_data.additional_emails.split(',') if e.strip()]
+        if isinstance(booking_data.additional_emails, list):
+            additional_emails_list = [e.strip() for e in booking_data.additional_emails if e and e.strip()]
+        elif isinstance(booking_data.additional_emails, str):
+            additional_emails_list = [e.strip() for e in booking_data.additional_emails.split(',') if e.strip()]
     
     try:
         await send_booking_email(
@@ -396,7 +399,10 @@ async def update_booking(
     
     additional_emails_list = []
     if booking.additional_emails:
-        additional_emails_list = [e.strip() for e in booking.additional_emails.split(',') if e.strip()]
+        if isinstance(booking.additional_emails, list):
+            additional_emails_list = [e.strip() for e in booking.additional_emails if e and e.strip()]
+        elif isinstance(booking.additional_emails, str):
+            additional_emails_list = [e.strip() for e in booking.additional_emails.split(',') if e.strip()]
     
     try:
         await send_booking_email(
@@ -469,7 +475,10 @@ async def cancel_booking(
     
     additional_emails_list = []
     if booking.additional_emails:
-        additional_emails_list = [e.strip() for e in booking.additional_emails.split(',') if e.strip()]
+        if isinstance(booking.additional_emails, list):
+            additional_emails_list = [e.strip() for e in booking.additional_emails if e and e.strip()]
+        elif isinstance(booking.additional_emails, str):
+            additional_emails_list = [e.strip() for e in booking.additional_emails.split(',') if e.strip()]
     
     try:
         await send_booking_email(
