@@ -363,6 +363,7 @@ class CalendarEventTemplateCreate(BaseModel):
     event_body: Optional[str] = None
     include_customer_as_attendee: bool = False
     additional_attendees: Optional[List[str]] = None
+    is_teams_meeting: bool = False
     is_default: bool = False
 
 
@@ -374,6 +375,7 @@ class CalendarEventTemplateResponse(BaseModel):
     event_body: Optional[str]
     include_customer_as_attendee: bool
     additional_attendees: Optional[List[str]]
+    is_teams_meeting: bool
     is_active: bool
     is_default: bool
     created_at: datetime

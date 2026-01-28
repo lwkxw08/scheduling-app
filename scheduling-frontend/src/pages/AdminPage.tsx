@@ -108,6 +108,7 @@ export default function AdminPage() {
   const [calendarTemplateBody, setCalendarTemplateBody] = useState('');
   const [calendarTemplateIncludeCustomer, setCalendarTemplateIncludeCustomer] = useState(false);
   const [calendarTemplateAdditionalAttendees, setCalendarTemplateAdditionalAttendees] = useState('');
+  const [calendarTemplateIsTeamsMeeting, setCalendarTemplateIsTeamsMeeting] = useState(false);
   const [calendarTemplateIsDefault, setCalendarTemplateIsDefault] = useState(false);
 
   const emailSubjectRef = useRef<HTMLInputElement>(null);
@@ -591,6 +592,7 @@ export default function AdminPage() {
     setCalendarTemplateBody('');
     setCalendarTemplateIncludeCustomer(false);
     setCalendarTemplateAdditionalAttendees('');
+    setCalendarTemplateIsTeamsMeeting(false);
     setCalendarTemplateIsDefault(false);
   };
 
@@ -602,6 +604,7 @@ export default function AdminPage() {
     setCalendarTemplateBody(template.event_body || '');
     setCalendarTemplateIncludeCustomer(template.include_customer_as_attendee);
     setCalendarTemplateAdditionalAttendees(template.additional_attendees?.join(', ') || '');
+    setCalendarTemplateIsTeamsMeeting(template.is_teams_meeting || false);
     setCalendarTemplateIsDefault(template.is_default);
     setShowCalendarTemplateDialog(true);
   };
@@ -620,6 +623,7 @@ export default function AdminPage() {
         event_body: calendarTemplateBody || undefined,
         include_customer_as_attendee: calendarTemplateIncludeCustomer,
         additional_attendees: additionalAttendees.length > 0 ? additionalAttendees : undefined,
+        is_teams_meeting: calendarTemplateIsTeamsMeeting,
         is_default: calendarTemplateIsDefault,
       };
 
@@ -2177,6 +2181,21 @@ export default function AdminPage() {
                         </div>
                       </div>
 
+                      <div className="border-t pt-4">
+                        <Label className="text-base font-medium">Meeting Options</Label>
+                        <div className="mt-3 space-y-3">
+                          <div className="flex items-center space-x-2">
+                            <Checkbox 
+                              id="isTeamsMeeting"
+                              checked={calendarTemplateIsTeamsMeeting}
+                              onCheckedChange={(checked) => setCalendarTemplateIsTeamsMeeting(checked as boolean)}
+                            />
+                            <label htmlFor="isTeamsMeeting" className="text-sm">Create as Microsoft Teams Meeting</label>
+                          </div>
+                          <p className="text-xs text-gray-500">When enabled, the calendar event will include a Teams meeting link (requires Microsoft Graph integration)</p>
+                        </div>
+                      </div>
+
                       <div className="flex items-center space-x-2">
                         <Checkbox 
                           id="calIsDefault"
@@ -2221,11 +2240,12 @@ export default function AdminPage() {
                           </TableCell>
                           <TableCell className="max-w-xs truncate">{template.event_title}</TableCell>
                           <TableCell>
-                            <div className="flex gap-1">
+                            <div className="flex gap-1 flex-wrap">
                               {template.include_customer_as_attendee && <Badge variant="secondary" className="text-xs">Customer</Badge>}
                               {template.additional_attendees && template.additional_attendees.length > 0 && (
                                 <Badge variant="secondary" className="text-xs">+{template.additional_attendees.length}</Badge>
                               )}
+                              {template.is_teams_meeting && <Badge className="bg-blue-100 text-blue-800 text-xs">Teams</Badge>}
                             </div>
                           </TableCell>
                           <TableCell>

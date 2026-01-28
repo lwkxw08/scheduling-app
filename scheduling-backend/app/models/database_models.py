@@ -229,6 +229,7 @@ class CalendarEventTemplate(Base):
     event_body = Column(Text, nullable=True)
     include_customer_as_attendee = Column(Boolean, default=False)
     additional_attendees = Column(JSON, nullable=True)  # List of additional attendee emails
+    is_teams_meeting = Column(Boolean, default=False)  # Create as Microsoft Teams meeting
     is_active = Column(Boolean, default=True)
     is_default = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)

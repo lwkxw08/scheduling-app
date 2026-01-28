@@ -158,6 +158,7 @@ export interface CalendarEventTemplate {
   event_body: string | null;
   include_customer_as_attendee: boolean;
   additional_attendees: string[] | null;
+  is_teams_meeting: boolean;
   is_active: boolean;
   is_default: boolean;
   created_at: string;
