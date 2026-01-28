@@ -11,6 +11,8 @@ from app.schemas.schemas import BookingCreate, BookingUpdate, BookingResponse, E
 from app.services.auth import decode_access_token
 from app.services import microsoft_graph
 from app.services.availability import check_specific_slot_availability
+from app.services.email_service import send_booking_email, is_smtp_configured
+from app.models.database_models import TemplateType
 
 router = APIRouter(prefix="/bookings", tags=["Bookings"])
 
@@ -242,6 +244,22 @@ async def create_booking(
     )
     booking = result.scalar_one()
     
+    additional_emails_list = []
+    if booking_data.additional_emails:
+        additional_emails_list = [e.strip() for e in booking_data.additional_emails.split(',') if e.strip()]
+    
+    try:
+        await send_booking_email(
+            db,
+            booking,
+            user.full_name,
+            user.email,
+            TemplateType.CONFIRMATION,
+            additional_emails_list
+        )
+    except Exception as e:
+        print(f"Email sending error: {str(e)}")
+    
     return BookingResponse.model_validate(booking)
 
 
@@ -376,6 +394,22 @@ async def update_booking(
     )
     booking = result.scalar_one()
     
+    additional_emails_list = []
+    if booking.additional_emails:
+        additional_emails_list = [e.strip() for e in booking.additional_emails.split(',') if e.strip()]
+    
+    try:
+        await send_booking_email(
+            db,
+            booking,
+            user.full_name,
+            user.email,
+            TemplateType.AMENDMENT,
+            additional_emails_list
+        )
+    except Exception as e:
+        print(f"Amendment email error: {str(e)}")
+    
     return BookingResponse.model_validate(booking)
 
 
@@ -390,7 +424,11 @@ async def cancel_booking(
     result = await db.execute(
         select(Booking)
         .where(Booking.id == booking_id)
-        .options(selectinload(Booking.engineer))
+        .options(
+            selectinload(Booking.engineer).selectinload(Engineer.user),
+            selectinload(Booking.product),
+            selectinload(Booking.change_type)
+        )
     )
     booking = result.scalar_one_or_none()
     
@@ -428,6 +466,22 @@ async def cancel_booking(
             )
         except Exception:
             pass
+    
+    additional_emails_list = []
+    if booking.additional_emails:
+        additional_emails_list = [e.strip() for e in booking.additional_emails.split(',') if e.strip()]
+    
+    try:
+        await send_booking_email(
+            db,
+            booking,
+            user.full_name,
+            user.email,
+            TemplateType.CANCELLATION,
+            additional_emails_list
+        )
+    except Exception as e:
+        print(f"Cancellation email error: {str(e)}")
     
     await db.commit()
     
