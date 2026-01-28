@@ -218,7 +218,11 @@ async def create_change_type(
 ):
     await get_admin_user(authorization, db)
     
-    change_type = ChangeType(name=change_type_data.name, description=change_type_data.description)
+    change_type = ChangeType(
+        name=change_type_data.name,
+        description=change_type_data.description,
+        minimum_notice_hours=change_type_data.minimum_notice_hours or 0
+    )
     db.add(change_type)
     try:
         await db.commit()
@@ -242,7 +246,7 @@ async def get_change_types(
     return [ChangeTypeResponse.model_validate(ct) for ct in change_types]
 
 
-@router.patch("/change-types/{change_type_id}")
+@router.patch("/change-types/{change_type_id}", response_model=ChangeTypeResponse)
 async def update_change_type(
     change_type_id: int,
     change_type_data: ChangeTypeCreate,
@@ -258,8 +262,11 @@ async def update_change_type(
     
     change_type.name = change_type_data.name
     change_type.description = change_type_data.description
+    if change_type_data.minimum_notice_hours is not None:
+        change_type.minimum_notice_hours = change_type_data.minimum_notice_hours
     await db.commit()
-    return {"message": "Change type updated successfully"}
+    await db.refresh(change_type)
+    return ChangeTypeResponse.model_validate(change_type)
 
 
 @router.delete("/change-types/{change_type_id}")

@@ -27,6 +27,7 @@ export interface ChangeType {
   id: number;
   name: string;
   description: string | null;
+  minimum_notice_hours: number;
   is_active: boolean;
   created_at: string;
 }

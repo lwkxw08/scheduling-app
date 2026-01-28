@@ -103,6 +103,7 @@ class ChangeType(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(255), unique=True, nullable=False)
     description = Column(Text, nullable=True)
+    minimum_notice_hours = Column(Integer, default=0)  # Minimum notice period in hours (0 = no minimum)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 

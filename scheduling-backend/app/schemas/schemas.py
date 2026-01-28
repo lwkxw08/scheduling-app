@@ -81,12 +81,20 @@ class ProductResponse(BaseModel):
 class ChangeTypeCreate(BaseModel):
     name: str
     description: Optional[str] = None
+    minimum_notice_hours: Optional[int] = 0  # Minimum notice period in hours (0 = no minimum)
+
+
+class ChangeTypeUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    minimum_notice_hours: Optional[int] = None
 
 
 class ChangeTypeResponse(BaseModel):
     id: int
     name: str
     description: Optional[str]
+    minimum_notice_hours: int
     is_active: bool
     created_at: datetime
 

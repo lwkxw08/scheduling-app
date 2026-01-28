@@ -49,6 +49,7 @@ export default function AdminPage() {
   const [editingChangeType, setEditingChangeType] = useState<ChangeType | null>(null);
   const [changeTypeName, setChangeTypeName] = useState('');
   const [changeTypeDescription, setChangeTypeDescription] = useState('');
+  const [changeTypeMinNoticeHours, setChangeTypeMinNoticeHours] = useState('0');
 
   const [showEngineerDialog, setShowEngineerDialog] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
@@ -294,15 +295,17 @@ export default function AdminPage() {
 
   const handleSaveChangeType = async () => {
     try {
+      const minNoticeHours = parseInt(changeTypeMinNoticeHours) || 0;
       if (editingChangeType) {
-        await api.updateChangeType(editingChangeType.id, changeTypeName, changeTypeDescription);
+        await api.updateChangeType(editingChangeType.id, changeTypeName, changeTypeDescription, minNoticeHours);
       } else {
-        await api.createChangeType(changeTypeName, changeTypeDescription);
+        await api.createChangeType(changeTypeName, changeTypeDescription, minNoticeHours);
       }
       setShowChangeTypeDialog(false);
       setEditingChangeType(null);
       setChangeTypeName('');
       setChangeTypeDescription('');
+      setChangeTypeMinNoticeHours('0');
       loadAllData();
     } catch (err: any) {
       setError(err.message);
@@ -1354,71 +1357,88 @@ export default function AdminPage() {
                   <CardTitle>Change Types</CardTitle>
                   <CardDescription>Manage types of changes/services</CardDescription>
                 </div>
-                <Dialog open={showChangeTypeDialog} onOpenChange={setShowChangeTypeDialog}>
-                  <DialogTrigger asChild>
-                    <Button onClick={() => { setEditingChangeType(null); setChangeTypeName(''); setChangeTypeDescription(''); }}>
-                      <Plus className="w-4 h-4 mr-2" />
-                      Add Change Type
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>{editingChangeType ? 'Edit Change Type' : 'Add Change Type'}</DialogTitle>
-                    </DialogHeader>
-                    <div className="space-y-4">
-                      <div className="space-y-2">
-                        <Label>Name</Label>
-                        <Input value={changeTypeName} onChange={(e) => setChangeTypeName(e.target.value)} />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Description</Label>
-                        <Textarea value={changeTypeDescription} onChange={(e) => setChangeTypeDescription(e.target.value)} />
-                      </div>
-                    </div>
-                    <DialogFooter>
-                      <Button variant="outline" onClick={() => setShowChangeTypeDialog(false)}>Cancel</Button>
-                      <Button onClick={handleSaveChangeType}>Save</Button>
-                    </DialogFooter>
-                  </DialogContent>
-                </Dialog>
+                                <Dialog open={showChangeTypeDialog} onOpenChange={setShowChangeTypeDialog}>
+                                  <DialogTrigger asChild>
+                                    <Button onClick={() => { setEditingChangeType(null); setChangeTypeName(''); setChangeTypeDescription(''); setChangeTypeMinNoticeHours('0'); }}>
+                                      <Plus className="w-4 h-4 mr-2" />
+                                      Add Change Type
+                                    </Button>
+                                  </DialogTrigger>
+                                  <DialogContent>
+                                    <DialogHeader>
+                                      <DialogTitle>{editingChangeType ? 'Edit Change Type' : 'Add Change Type'}</DialogTitle>
+                                    </DialogHeader>
+                                    <div className="space-y-4">
+                                      <div className="space-y-2">
+                                        <Label>Name</Label>
+                                        <Input value={changeTypeName} onChange={(e) => setChangeTypeName(e.target.value)} />
+                                      </div>
+                                      <div className="space-y-2">
+                                        <Label>Description</Label>
+                                        <Textarea value={changeTypeDescription} onChange={(e) => setChangeTypeDescription(e.target.value)} />
+                                      </div>
+                                      <div className="space-y-2">
+                                        <Label>Minimum Notice Period (hours)</Label>
+                                        <Input 
+                                          type="number" 
+                                          min="0"
+                                          value={changeTypeMinNoticeHours} 
+                                          onChange={(e) => setChangeTypeMinNoticeHours(e.target.value)} 
+                                          placeholder="0 = no minimum"
+                                        />
+                                        <p className="text-sm text-gray-500">
+                                          Set the minimum hours notice required for bookings of this change type. 
+                                          Bookers will need to use the expedite process for shorter notice periods.
+                                        </p>
+                                      </div>
+                                    </div>
+                                    <DialogFooter>
+                                      <Button variant="outline" onClick={() => setShowChangeTypeDialog(false)}>Cancel</Button>
+                                      <Button onClick={handleSaveChangeType}>Save</Button>
+                                    </DialogFooter>
+                                  </DialogContent>
+                                </Dialog>
               </CardHeader>
               <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Description</TableHead>
-                      <TableHead>Created</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {changeTypes.map((ct) => (
-                      <TableRow key={ct.id}>
-                        <TableCell className="font-medium">{ct.name}</TableCell>
-                        <TableCell>{ct.description || '-'}</TableCell>
-                        <TableCell>{new Date(ct.created_at).toLocaleDateString()}</TableCell>
-                        <TableCell className="text-right">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => {
-                              setEditingChangeType(ct);
-                              setChangeTypeName(ct.name);
-                              setChangeTypeDescription(ct.description || '');
-                              setShowChangeTypeDialog(true);
-                            }}
-                          >
-                            <Edit className="w-4 h-4" />
-                          </Button>
-                          <Button variant="ghost" size="sm" onClick={() => handleDeleteChangeType(ct.id)}>
-                            <Trash2 className="w-4 h-4 text-red-500" />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                                <Table>
+                                  <TableHeader>
+                                    <TableRow>
+                                      <TableHead>Name</TableHead>
+                                      <TableHead>Description</TableHead>
+                                      <TableHead>Min Notice (hrs)</TableHead>
+                                      <TableHead>Created</TableHead>
+                                      <TableHead className="text-right">Actions</TableHead>
+                                    </TableRow>
+                                  </TableHeader>
+                                  <TableBody>
+                                    {changeTypes.map((ct) => (
+                                      <TableRow key={ct.id}>
+                                        <TableCell className="font-medium">{ct.name}</TableCell>
+                                        <TableCell>{ct.description || '-'}</TableCell>
+                                        <TableCell>{ct.minimum_notice_hours || 0}</TableCell>
+                                        <TableCell>{new Date(ct.created_at).toLocaleDateString()}</TableCell>
+                                        <TableCell className="text-right">
+                                          <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => {
+                                              setEditingChangeType(ct);
+                                              setChangeTypeName(ct.name);
+                                              setChangeTypeDescription(ct.description || '');
+                                              setChangeTypeMinNoticeHours((ct.minimum_notice_hours || 0).toString());
+                                              setShowChangeTypeDialog(true);
+                                            }}
+                                          >
+                                            <Edit className="w-4 h-4" />
+                                          </Button>
+                                          <Button variant="ghost" size="sm" onClick={() => handleDeleteChangeType(ct.id)}>
+                                            <Trash2 className="w-4 h-4 text-red-500" />
+                                          </Button>
+                                        </TableCell>
+                                      </TableRow>
+                                    ))}
+                                  </TableBody>
+                                </Table>
               </CardContent>
             </Card>
           </TabsContent>
