@@ -182,6 +182,12 @@ export default function AdminPage() {
   const [emailPreviewBody, setEmailPreviewBody] = useState('');
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
 
+  // App Branding state
+  const [appName, setAppName] = useState('Scheduling App');
+  const [appLogoUrl, setAppLogoUrl] = useState('');
+  const [isSavingBranding, setIsSavingBranding] = useState(false);
+  const [isUploadingAppLogo, setIsUploadingAppLogo] = useState(false);
+
   // Email Rules state
   const [emailRules, setEmailRules] = useState<any[]>([]);
   const [showEmailRuleDialog, setShowEmailRuleDialog] = useState(false);
@@ -263,6 +269,12 @@ export default function AdminPage() {
       if (smtpFromEmailConfig) setSmtpFromEmail(smtpFromEmailConfig.value);
       if (smtpFromNameConfig) setSmtpFromName(smtpFromNameConfig.value);
       if (smtpUseTlsConfig) setSmtpUseTls(smtpUseTlsConfig.value === 'true');
+
+      // Load App Branding settings
+      const appNameConfig = configsList.find(c => c.key === 'app_name');
+      const appLogoUrlConfig = configsList.find(c => c.key === 'app_logo_url');
+      if (appNameConfig) setAppName(appNameConfig.value);
+      if (appLogoUrlConfig) setAppLogoUrl(appLogoUrlConfig.value);
     } catch (err: any) {
       setError(err.message || 'Failed to load data');
     } finally {
@@ -602,6 +614,36 @@ export default function AdminPage() {
       setSmtpStatus(`Failed to send test email: ${err.message}`);
     } finally {
       setIsSendingTestEmail(false);
+    }
+  };
+
+  const handleSaveBrandingConfig = async () => {
+    setIsSavingBranding(true);
+    try {
+      await Promise.all([
+        api.setSystemConfig('app_name', appName, 'Application name displayed in header'),
+        api.setSystemConfig('app_logo_url', appLogoUrl, 'Application logo URL'),
+      ]);
+      loadAllData();
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setIsSavingBranding(false);
+    }
+  };
+
+  const handleAppLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    setIsUploadingAppLogo(true);
+    try {
+      const result = await api.uploadFile(file);
+      setAppLogoUrl(result.url);
+    } catch (err: any) {
+      setError(`Failed to upload logo: ${err.message}`);
+    } finally {
+      setIsUploadingAppLogo(false);
     }
   };
 
@@ -3533,6 +3575,86 @@ export default function AdminPage() {
                     ))}
                   </TableBody>
                 </Table>
+              </CardContent>
+            </Card>
+
+            <Card className="mt-6">
+              <CardHeader>
+                <CardTitle>App Branding</CardTitle>
+                <CardDescription>
+                  Customize the application name and logo displayed in the header
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-6">
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label>Application Name</Label>
+                      <Input 
+                        value={appName} 
+                        onChange={(e) => setAppName(e.target.value)}
+                        placeholder="Scheduling App"
+                      />
+                      <p className="text-xs text-gray-500">This name will be displayed in the header</p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Logo URL</Label>
+                      <div className="flex gap-2">
+                        <Input 
+                          value={appLogoUrl} 
+                          onChange={(e) => setAppLogoUrl(e.target.value)}
+                          placeholder="https://example.com/logo.png"
+                          className="flex-1"
+                        />
+                        <div className="relative">
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={handleAppLogoUpload}
+                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                            disabled={isUploadingAppLogo}
+                          />
+                          <Button variant="outline" disabled={isUploadingAppLogo}>
+                            {isUploadingAppLogo ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <Upload className="w-4 h-4" />
+                            )}
+                          </Button>
+                        </div>
+                      </div>
+                      <p className="text-xs text-gray-500">Enter a URL or upload an image file</p>
+                    </div>
+                  </div>
+                  
+                  {appLogoUrl && (
+                    <div className="border rounded-lg p-4 bg-gray-50">
+                      <Label className="mb-2 block">Logo Preview</Label>
+                      <div className="flex items-center gap-3">
+                        <img 
+                          src={appLogoUrl} 
+                          alt="App Logo Preview" 
+                          className="h-10 w-10 object-contain"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).style.display = 'none';
+                          }}
+                        />
+                        <span className="font-semibold text-lg">{appName}</span>
+                      </div>
+                    </div>
+                  )}
+                  
+                  <Button onClick={handleSaveBrandingConfig} disabled={isSavingBranding}>
+                    {isSavingBranding ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Saving...
+                      </>
+                    ) : (
+                      'Save Branding Settings'
+                    )}
+                  </Button>
+                </div>
               </CardContent>
             </Card>
 

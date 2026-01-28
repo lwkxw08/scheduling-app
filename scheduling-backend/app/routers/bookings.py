@@ -487,6 +487,15 @@ async def update_booking(
         booking.custom_fields_data = update_data.custom_fields_data
     if update_data.additional_emails is not None:
         booking.additional_emails = update_data.additional_emails
+    if update_data.engineer_id is not None:
+        # Verify the new engineer exists
+        result = await db.execute(
+            select(Engineer).where(Engineer.id == update_data.engineer_id)
+        )
+        new_engineer = result.scalar_one_or_none()
+        if not new_engineer:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Engineer not found")
+        booking.engineer_id = update_data.engineer_id
     
     admin_token = await get_admin_token(db)
     if admin_token and booking.outlook_event_id and booking.engineer.calendar_email:

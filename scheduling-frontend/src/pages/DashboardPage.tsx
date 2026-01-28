@@ -21,6 +21,10 @@ export default function DashboardPage() {
   const [showAdminSetup, setShowAdminSetup] = useState(false);
   const [isPromoting, setIsPromoting] = useState(false);
 
+  // App branding state
+  const [appName, setAppName] = useState('Scheduling App');
+  const [appLogoUrl, setAppLogoUrl] = useState('');
+
   // Search and filter state
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -33,7 +37,20 @@ export default function DashboardPage() {
     loadBookings();
     loadFiltersData();
     checkAdminSetup();
+    loadBranding();
   }, []);
+
+  const loadBranding = async () => {
+    try {
+      const configs = await api.getSystemConfig() as any[];
+      const appNameConfig = configs.find((c: any) => c.key === 'app_name');
+      const appLogoConfig = configs.find((c: any) => c.key === 'app_logo_url');
+      if (appNameConfig) setAppName(appNameConfig.value);
+      if (appLogoConfig) setAppLogoUrl(appLogoConfig.value);
+    } catch (error) {
+      console.error('Failed to load branding:', error);
+    }
+  };
 
   const checkAdminSetup = async () => {
     try {
@@ -177,11 +194,22 @@ export default function DashboardPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center py-4">
             <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 bg-indigo-600 rounded-lg flex items-center justify-center">
+              {appLogoUrl ? (
+                <img 
+                  src={appLogoUrl} 
+                  alt={appName} 
+                  className="w-10 h-10 object-contain rounded-lg"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).style.display = 'none';
+                    (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
+                  }}
+                />
+              ) : null}
+              <div className={`w-10 h-10 bg-indigo-600 rounded-lg flex items-center justify-center ${appLogoUrl ? 'hidden' : ''}`}>
                 <Calendar className="w-6 h-6 text-white" />
               </div>
               <div>
-                <h1 className="text-xl font-semibold text-gray-900">Scheduling App</h1>
+                <h1 className="text-xl font-semibold text-gray-900">{appName}</h1>
                 <p className="text-sm text-gray-500">Welcome, {user?.full_name}</p>
               </div>
             </div>

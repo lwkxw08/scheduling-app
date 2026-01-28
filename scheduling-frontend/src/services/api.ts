@@ -300,6 +300,7 @@ class ApiService {
     additional_emails?: string[];
     engineer_attachment_url?: string;
     customer_attachment_url?: string;
+    engineer_id?: number;
   }) {
     return this.request(`/bookings/${id}`, {
       method: 'PATCH',

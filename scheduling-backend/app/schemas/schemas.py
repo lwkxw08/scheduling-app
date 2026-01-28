@@ -219,6 +219,7 @@ class BookingUpdate(BaseModel):
     additional_emails: Optional[List[str]] = None
     engineer_attachment_url: Optional[str] = None
     customer_attachment_url: Optional[str] = None
+    engineer_id: Optional[int] = None
 
 
 class BookingResponse(BaseModel):
