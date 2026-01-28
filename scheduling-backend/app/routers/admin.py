@@ -2584,3 +2584,42 @@ async def process_email_rules(
     from app.services.email_rule_processor import process_all_rules
     results = await process_all_rules(db)
     return {"message": "Email rules processed", "results": results}
+
+
+@router.delete("/bookings/{booking_id}/permanent")
+async def permanently_delete_booking(
+    booking_id: int,
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """Permanently delete a booking and all related records (admin only)"""
+    await get_admin_user(authorization, db)
+    
+    # Get the booking
+    result = await db.execute(select(Booking).where(Booking.id == booking_id))
+    booking = result.scalar_one_or_none()
+    if not booking:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
+    
+    # Delete related booking fees
+    await db.execute(
+        select(BookingFee).where(BookingFee.booking_id == booking_id)
+    )
+    booking_fees_result = await db.execute(
+        select(BookingFee).where(BookingFee.booking_id == booking_id)
+    )
+    for fee in booking_fees_result.scalars().all():
+        await db.delete(fee)
+    
+    # Delete related status updates
+    status_updates_result = await db.execute(
+        select(BookingStatusUpdate).where(BookingStatusUpdate.booking_id == booking_id)
+    )
+    for update in status_updates_result.scalars().all():
+        await db.delete(update)
+    
+    # Delete the booking itself
+    await db.delete(booking)
+    await db.commit()
+    
+    return {"message": f"Booking {booking_id} permanently deleted"}

@@ -10,12 +10,12 @@ import { Textarea } from '../components/ui/textarea';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
-import { Calendar, ArrowLeft, Clock, User, AlertTriangle, Edit, Trash2 } from 'lucide-react';
+import { Calendar, ArrowLeft, Clock, User, AlertTriangle, Edit, Trash2, XCircle } from 'lucide-react';
 
 export default function BookingDetailPage() {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
-  useAuth();
+  const { user } = useAuth();
   
   const [booking, setBooking] = useState<Booking | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -28,8 +28,12 @@ export default function BookingDetailPage() {
   const [editAdditionalEmails, setEditAdditionalEmails] = useState('');
   
   const [showCancelDialog, setShowCancelDialog] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  
+  const isAdmin = user?.role === 'admin';
 
   useEffect(() => {
     loadBooking();
@@ -92,6 +96,21 @@ export default function BookingDetailPage() {
     } catch (err: any) {
       setError(err.message || 'Failed to cancel booking');
       setIsCancelling(false);
+    }
+  };
+
+  const handlePermanentDelete = async () => {
+    if (!booking) return;
+    
+    setIsDeleting(true);
+    setError('');
+    
+    try {
+      await api.permanentlyDeleteBooking(booking.id);
+      navigate('/dashboard');
+    } catch (err: any) {
+      setError(err.message || 'Failed to delete booking');
+      setIsDeleting(false);
     }
   };
 
@@ -382,6 +401,55 @@ export default function BookingDetailPage() {
                         disabled={isCancelling}
                       >
                         {isCancelling ? 'Cancelling...' : 'Yes, Cancel Booking'}
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+              </CardContent>
+            </Card>
+          )}
+
+          {isAdmin && (
+            <Card className="border-red-300 bg-red-50">
+              <CardHeader>
+                <CardTitle className="text-red-700">Admin: Permanent Delete</CardTitle>
+                <CardDescription>
+                  Permanently delete this booking record from the system. This cannot be undone.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+                  <DialogTrigger asChild>
+                    <Button variant="destructive" className="bg-red-700 hover:bg-red-800">
+                      <XCircle className="w-4 h-4 mr-2" />
+                      Permanently Delete Booking
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Permanently Delete Booking</DialogTitle>
+                      <DialogDescription>
+                        This will permanently remove the booking and all associated records from the database.
+                        This action cannot be undone.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="flex items-center p-4 bg-red-100 rounded-lg">
+                      <AlertTriangle className="w-5 h-5 text-red-600 mr-3" />
+                      <p className="text-sm text-red-800">
+                        Warning: This will delete all booking data including fees, status history, and related records.
+                      </p>
+                    </div>
+                    <DialogFooter>
+                      <Button variant="outline" onClick={() => setShowDeleteDialog(false)}>
+                        Cancel
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        className="bg-red-700 hover:bg-red-800"
+                        onClick={handlePermanentDelete}
+                        disabled={isDeleting}
+                      >
+                        {isDeleting ? 'Deleting...' : 'Yes, Permanently Delete'}
                       </Button>
                     </DialogFooter>
                   </DialogContent>

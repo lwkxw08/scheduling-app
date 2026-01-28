@@ -802,6 +802,10 @@ class ApiService {
   async processEmailRules() {
     return this.request<any>('/admin/email-rules/process', { method: 'POST' });
   }
+
+  async permanentlyDeleteBooking(bookingId: number) {
+    return this.request<any>(`/admin/bookings/${bookingId}/permanent`, { method: 'DELETE' });
+  }
 }
 
 export const api = new ApiService();
