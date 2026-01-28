@@ -415,7 +415,11 @@ async def update_booking(
     if booking.status == BookingStatus.CANCELLED:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot update cancelled booking")
     
-    deadline_hours = int(await get_config_value(db, "amendment_deadline_hours", "24"))
+    # Use change type-specific amendment notice if set, otherwise use global setting
+    if booking.change_type and booking.change_type.amendment_notice_hours is not None:
+        deadline_hours = booking.change_type.amendment_notice_hours
+    else:
+        deadline_hours = int(await get_config_value(db, "amendment_deadline_hours", "24"))
     deadline = booking.scheduled_date - timedelta(hours=deadline_hours)
     
     is_late_change = datetime.utcnow() > deadline
@@ -514,7 +518,11 @@ async def cancel_booking(
     if booking.status == BookingStatus.CANCELLED:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Booking already cancelled")
     
-    deadline_hours = int(await get_config_value(db, "cancellation_deadline_hours", "24"))
+    # Use change type-specific cancellation notice if set, otherwise use global setting
+    if booking.change_type and booking.change_type.cancellation_notice_hours is not None:
+        deadline_hours = booking.change_type.cancellation_notice_hours
+    else:
+        deadline_hours = int(await get_config_value(db, "cancellation_deadline_hours", "24"))
     deadline = booking.scheduled_date - timedelta(hours=deadline_hours)
     
     is_late_cancellation = datetime.utcnow() > deadline

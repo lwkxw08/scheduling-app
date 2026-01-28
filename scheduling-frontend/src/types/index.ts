@@ -28,6 +28,8 @@ export interface ChangeType {
   name: string;
   description: string | null;
   minimum_notice_hours: number;
+  cancellation_notice_hours: number | null;
+  amendment_notice_hours: number | null;
   is_active: boolean;
   created_at: string;
 }

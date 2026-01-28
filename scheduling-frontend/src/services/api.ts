@@ -84,17 +84,29 @@ class ApiService {
     return this.request('/admin/change-types');
   }
 
-  async createChangeType(name: string, description?: string, minimumNoticeHours?: number) {
+  async createChangeType(name: string, description?: string, minimumNoticeHours?: number, cancellationNoticeHours?: number | null, amendmentNoticeHours?: number | null) {
     return this.request('/admin/change-types', {
       method: 'POST',
-      body: JSON.stringify({ name, description, minimum_notice_hours: minimumNoticeHours || 0 }),
+      body: JSON.stringify({ 
+        name, 
+        description, 
+        minimum_notice_hours: minimumNoticeHours || 0,
+        cancellation_notice_hours: cancellationNoticeHours,
+        amendment_notice_hours: amendmentNoticeHours
+      }),
     });
   }
 
-  async updateChangeType(id: number, name: string, description?: string, minimumNoticeHours?: number) {
+  async updateChangeType(id: number, name: string, description?: string, minimumNoticeHours?: number, cancellationNoticeHours?: number | null, amendmentNoticeHours?: number | null) {
     return this.request(`/admin/change-types/${id}`, {
       method: 'PATCH',
-      body: JSON.stringify({ name, description, minimum_notice_hours: minimumNoticeHours }),
+      body: JSON.stringify({ 
+        name, 
+        description, 
+        minimum_notice_hours: minimumNoticeHours,
+        cancellation_notice_hours: cancellationNoticeHours,
+        amendment_notice_hours: amendmentNoticeHours
+      }),
     });
   }
 

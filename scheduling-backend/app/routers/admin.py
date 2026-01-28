@@ -221,7 +221,9 @@ async def create_change_type(
     change_type = ChangeType(
         name=change_type_data.name,
         description=change_type_data.description,
-        minimum_notice_hours=change_type_data.minimum_notice_hours or 0
+        minimum_notice_hours=change_type_data.minimum_notice_hours or 0,
+        cancellation_notice_hours=change_type_data.cancellation_notice_hours,
+        amendment_notice_hours=change_type_data.amendment_notice_hours
     )
     db.add(change_type)
     try:
@@ -264,6 +266,9 @@ async def update_change_type(
     change_type.description = change_type_data.description
     if change_type_data.minimum_notice_hours is not None:
         change_type.minimum_notice_hours = change_type_data.minimum_notice_hours
+    # Allow setting to None (use global) or a specific value
+    change_type.cancellation_notice_hours = change_type_data.cancellation_notice_hours
+    change_type.amendment_notice_hours = change_type_data.amendment_notice_hours
     await db.commit()
     await db.refresh(change_type)
     return ChangeTypeResponse.model_validate(change_type)

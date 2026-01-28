@@ -47,6 +47,8 @@ async def run_migrations(conn):
         ("calendar_event_templates", "is_teams_meeting", "BOOLEAN DEFAULT 0"),
         ("fees", "apply_mode", "VARCHAR(50) DEFAULT 'auto'"),
         ("change_types", "minimum_notice_hours", "INTEGER DEFAULT 0"),
+        ("change_types", "cancellation_notice_hours", "INTEGER"),
+        ("change_types", "amendment_notice_hours", "INTEGER"),
     ]
     
     for table_name, column_name, column_def in migrations:

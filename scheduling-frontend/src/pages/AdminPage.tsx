@@ -50,6 +50,8 @@ export default function AdminPage() {
   const [changeTypeName, setChangeTypeName] = useState('');
   const [changeTypeDescription, setChangeTypeDescription] = useState('');
   const [changeTypeMinNoticeHours, setChangeTypeMinNoticeHours] = useState('0');
+  const [changeTypeCancellationNoticeHours, setChangeTypeCancellationNoticeHours] = useState('');
+  const [changeTypeAmendmentNoticeHours, setChangeTypeAmendmentNoticeHours] = useState('');
 
   const [showEngineerDialog, setShowEngineerDialog] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
@@ -296,16 +298,20 @@ export default function AdminPage() {
   const handleSaveChangeType = async () => {
     try {
       const minNoticeHours = parseInt(changeTypeMinNoticeHours) || 0;
+      const cancellationNoticeHours = changeTypeCancellationNoticeHours ? parseInt(changeTypeCancellationNoticeHours) : null;
+      const amendmentNoticeHours = changeTypeAmendmentNoticeHours ? parseInt(changeTypeAmendmentNoticeHours) : null;
       if (editingChangeType) {
-        await api.updateChangeType(editingChangeType.id, changeTypeName, changeTypeDescription, minNoticeHours);
+        await api.updateChangeType(editingChangeType.id, changeTypeName, changeTypeDescription, minNoticeHours, cancellationNoticeHours, amendmentNoticeHours);
       } else {
-        await api.createChangeType(changeTypeName, changeTypeDescription, minNoticeHours);
+        await api.createChangeType(changeTypeName, changeTypeDescription, minNoticeHours, cancellationNoticeHours, amendmentNoticeHours);
       }
       setShowChangeTypeDialog(false);
       setEditingChangeType(null);
       setChangeTypeName('');
       setChangeTypeDescription('');
       setChangeTypeMinNoticeHours('0');
+      setChangeTypeCancellationNoticeHours('');
+      setChangeTypeAmendmentNoticeHours('');
       loadAllData();
     } catch (err: any) {
       setError(err.message);
@@ -1378,7 +1384,7 @@ export default function AdminPage() {
                                         <Textarea value={changeTypeDescription} onChange={(e) => setChangeTypeDescription(e.target.value)} />
                                       </div>
                                       <div className="space-y-2">
-                                        <Label>Minimum Notice Period (hours)</Label>
+                                        <Label>Minimum Booking Notice (hours)</Label>
                                         <Input 
                                           type="number" 
                                           min="0"
@@ -1387,8 +1393,33 @@ export default function AdminPage() {
                                           placeholder="0 = no minimum"
                                         />
                                         <p className="text-sm text-gray-500">
-                                          Set the minimum hours notice required for bookings of this change type. 
-                                          Bookers will need to use the expedite process for shorter notice periods.
+                                          Minimum hours notice required for new bookings. Bookers will need to use the expedite process for shorter notice.
+                                        </p>
+                                      </div>
+                                      <div className="space-y-2">
+                                        <Label>Cancellation Notice (hours)</Label>
+                                        <Input 
+                                          type="number" 
+                                          min="0"
+                                          value={changeTypeCancellationNoticeHours} 
+                                          onChange={(e) => setChangeTypeCancellationNoticeHours(e.target.value)} 
+                                          placeholder="Leave empty to use global setting"
+                                        />
+                                        <p className="text-sm text-gray-500">
+                                          Minimum hours notice required before cancelling. Leave empty to use the global cancellation deadline setting.
+                                        </p>
+                                      </div>
+                                      <div className="space-y-2">
+                                        <Label>Amendment Notice (hours)</Label>
+                                        <Input 
+                                          type="number" 
+                                          min="0"
+                                          value={changeTypeAmendmentNoticeHours} 
+                                          onChange={(e) => setChangeTypeAmendmentNoticeHours(e.target.value)} 
+                                          placeholder="Leave empty to use global setting"
+                                        />
+                                        <p className="text-sm text-gray-500">
+                                          Minimum hours notice required before amending. Leave empty to use the global amendment deadline setting.
                                         </p>
                                       </div>
                                     </div>
@@ -1426,6 +1457,8 @@ export default function AdminPage() {
                                               setChangeTypeName(ct.name);
                                               setChangeTypeDescription(ct.description || '');
                                               setChangeTypeMinNoticeHours((ct.minimum_notice_hours || 0).toString());
+                                              setChangeTypeCancellationNoticeHours(ct.cancellation_notice_hours !== null ? ct.cancellation_notice_hours.toString() : '');
+                                              setChangeTypeAmendmentNoticeHours(ct.amendment_notice_hours !== null ? ct.amendment_notice_hours.toString() : '');
                                               setShowChangeTypeDialog(true);
                                             }}
                                           >

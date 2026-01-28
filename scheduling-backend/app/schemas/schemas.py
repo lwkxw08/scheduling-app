@@ -81,13 +81,17 @@ class ProductResponse(BaseModel):
 class ChangeTypeCreate(BaseModel):
     name: str
     description: Optional[str] = None
-    minimum_notice_hours: Optional[int] = 0  # Minimum notice period in hours (0 = no minimum)
+    minimum_notice_hours: Optional[int] = 0  # Minimum notice period in hours for booking (0 = no minimum)
+    cancellation_notice_hours: Optional[int] = None  # Minimum notice for cancellation (null = use global setting)
+    amendment_notice_hours: Optional[int] = None  # Minimum notice for amendment (null = use global setting)
 
 
 class ChangeTypeUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     minimum_notice_hours: Optional[int] = None
+    cancellation_notice_hours: Optional[int] = None
+    amendment_notice_hours: Optional[int] = None
 
 
 class ChangeTypeResponse(BaseModel):
@@ -95,6 +99,8 @@ class ChangeTypeResponse(BaseModel):
     name: str
     description: Optional[str]
     minimum_notice_hours: int
+    cancellation_notice_hours: Optional[int]
+    amendment_notice_hours: Optional[int]
     is_active: bool
     created_at: datetime
 

@@ -103,7 +103,9 @@ class ChangeType(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(255), unique=True, nullable=False)
     description = Column(Text, nullable=True)
-    minimum_notice_hours = Column(Integer, default=0)  # Minimum notice period in hours (0 = no minimum)
+    minimum_notice_hours = Column(Integer, default=0)  # Minimum notice period in hours for booking (0 = no minimum)
+    cancellation_notice_hours = Column(Integer, nullable=True)  # Minimum notice for cancellation (null = use global setting)
+    amendment_notice_hours = Column(Integer, nullable=True)  # Minimum notice for amendment (null = use global setting)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
