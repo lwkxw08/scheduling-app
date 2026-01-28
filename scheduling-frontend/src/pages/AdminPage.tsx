@@ -72,6 +72,10 @@ export default function AdminPage() {
   const [feeApplyMode, setFeeApplyMode] = useState<'auto' | 'approval'>('auto');
   const [feeProductIds, setFeeProductIds] = useState<number[]>([]);
   const [feeChangeTypeIds, setFeeChangeTypeIds] = useState<number[]>([]);
+  const [pendingFeeApprovals, setPendingFeeApprovals] = useState<any[]>([]);
+  const [showWaiveDialog, setShowWaiveDialog] = useState(false);
+  const [waivingFeeId, setWaivingFeeId] = useState<number | null>(null);
+  const [waiveReason, setWaiveReason] = useState('');
 
   const [showConfigDialog, setShowConfigDialog] = useState(false);
   const [configKey, setConfigKey] = useState('');
@@ -172,6 +176,7 @@ export default function AdminPage() {
       return;
     }
     loadAllData();
+    loadPendingFeeApprovals();
   }, [user, navigate]);
 
   const loadAllData = async () => {
@@ -394,6 +399,37 @@ export default function AdminPage() {
       } catch (err: any) {
         setError(err.message);
       }
+    }
+  };
+
+  const loadPendingFeeApprovals = async () => {
+    try {
+      const data = await api.getPendingFeeApprovals();
+      setPendingFeeApprovals(data);
+    } catch (err: any) {
+      console.error('Failed to load pending fee approvals:', err);
+    }
+  };
+
+  const handleApproveFee = async (bookingFeeId: number) => {
+    try {
+      await api.approveBookingFee(bookingFeeId);
+      loadPendingFeeApprovals();
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
+
+  const handleWaiveFee = async () => {
+    if (!waivingFeeId) return;
+    try {
+      await api.waiveBookingFee(waivingFeeId, waiveReason || undefined);
+      setShowWaiveDialog(false);
+      setWaivingFeeId(null);
+      setWaiveReason('');
+      loadPendingFeeApprovals();
+    } catch (err: any) {
+      setError(err.message);
     }
   };
 
@@ -1041,6 +1077,20 @@ export default function AdminPage() {
                 </div>
               </CardContent>
             </Card>
+            <Card 
+              className="cursor-pointer hover:shadow-md transition-shadow border-purple-200 bg-purple-50"
+              onClick={() => setActiveTab('fees')}
+            >
+              <CardContent className="pt-6">
+                <div className="flex items-center">
+                  <Clock className="w-8 h-8 text-purple-600 mr-3" />
+                  <div>
+                    <p className="text-2xl font-bold">{pendingFeeApprovals.length}</p>
+                    <p className="text-sm text-gray-500">Pending Fee Approvals</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
           </div>
         )}
 
@@ -1628,6 +1678,99 @@ export default function AdminPage() {
                 </Table>
               </CardContent>
             </Card>
+
+            {/* Pending Fee Approvals Section */}
+            {pendingFeeApprovals.length > 0 && (
+              <Card className="mt-6 border-purple-200">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Clock className="w-5 h-5 text-purple-600" />
+                    Pending Fee Approvals ({pendingFeeApprovals.length})
+                  </CardTitle>
+                  <CardDescription>Fees that require admin approval before being applied to bookings</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Booking</TableHead>
+                        <TableHead>Fee</TableHead>
+                        <TableHead>Amount</TableHead>
+                        <TableHead>Created</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {pendingFeeApprovals.map((pf) => (
+                        <TableRow key={pf.id}>
+                          <TableCell>
+                            <div>
+                              <p className="font-medium">#{pf.booking_id}</p>
+                              {pf.order_reference && <p className="text-sm text-gray-500">{pf.order_reference}</p>}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div>
+                              <p className="font-medium">{pf.fee_name || 'Unknown Fee'}</p>
+                              {pf.fee_type && <p className="text-sm text-gray-500">{pf.fee_type}</p>}
+                            </div>
+                          </TableCell>
+                          <TableCell>£{pf.amount?.toFixed(2) || '0.00'}</TableCell>
+                          <TableCell>{pf.created_at ? new Date(pf.created_at).toLocaleDateString() : '-'}</TableCell>
+                          <TableCell className="text-right">
+                            <Button
+                              variant="default"
+                              size="sm"
+                              className="mr-2"
+                              onClick={() => handleApproveFee(pf.id)}
+                            >
+                              Approve
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setWaivingFeeId(pf.id);
+                                setWaiveReason('');
+                                setShowWaiveDialog(true);
+                              }}
+                            >
+                              Waive
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Waive Fee Dialog */}
+            <Dialog open={showWaiveDialog} onOpenChange={setShowWaiveDialog}>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Waive Fee</DialogTitle>
+                  <DialogDescription>
+                    This will waive the fee and it will not be charged to the booking.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label>Reason for waiving (optional)</Label>
+                    <Textarea
+                      value={waiveReason}
+                      onChange={(e) => setWaiveReason(e.target.value)}
+                      placeholder="Enter reason for waiving this fee..."
+                    />
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setShowWaiveDialog(false)}>Cancel</Button>
+                  <Button onClick={handleWaiveFee}>Waive Fee</Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           </TabsContent>
 
           <TabsContent value="reports">

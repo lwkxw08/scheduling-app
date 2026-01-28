@@ -721,6 +721,28 @@ class ApiService {
   async getBookingSettings() {
     return this.request<{ booking_advance_limit_days: number }>('/bookings/booking-settings');
   }
+
+  // Booking Fees
+  async getBookingFees(bookingId: number) {
+    return this.request<any[]>(`/admin/bookings/${bookingId}/fees`);
+  }
+
+  async getPendingFeeApprovals() {
+    return this.request<any[]>('/admin/booking-fees/pending');
+  }
+
+  async waiveBookingFee(bookingFeeId: number, reason?: string) {
+    const params = reason ? `?reason=${encodeURIComponent(reason)}` : '';
+    return this.request<any>(`/admin/booking-fees/${bookingFeeId}/waive${params}`, { method: 'POST' });
+  }
+
+  async approveBookingFee(bookingFeeId: number) {
+    return this.request<any>(`/admin/booking-fees/${bookingFeeId}/approve`, { method: 'POST' });
+  }
+
+  async removeBookingFee(bookingFeeId: number) {
+    return this.request<any>(`/admin/booking-fees/${bookingFeeId}`, { method: 'DELETE' });
+  }
 }
 
 export const api = new ApiService();
