@@ -26,12 +26,12 @@ async def is_smtp_configured(db: AsyncSession) -> bool:
     return bool(config.get('smtp_host') and config.get('smtp_port') and config.get('smtp_from_email'))
 
 
-async def get_email_template(db: AsyncSession, template_type: TemplateType, recipient_type: str) -> Optional[EmailTemplate]:
-    """Get email template by type and recipient"""
+async def get_email_template(db: AsyncSession, template_type: TemplateType) -> Optional[EmailTemplate]:
+    """Get email template by type - returns the default or first active template for this type"""
     result = await db.execute(
         select(EmailTemplate).where(
             EmailTemplate.template_type == template_type,
-            EmailTemplate.recipient_type == recipient_type,
+            EmailTemplate.is_default == True,
             EmailTemplate.is_active == True
         )
     )
@@ -41,7 +41,6 @@ async def get_email_template(db: AsyncSession, template_type: TemplateType, reci
         result = await db.execute(
             select(EmailTemplate).where(
                 EmailTemplate.template_type == template_type,
-                EmailTemplate.is_default == True,
                 EmailTemplate.is_active == True
             )
         )
@@ -176,49 +175,49 @@ async def send_booking_email(
     
     booking_data = build_booking_data(booking, booker_name, booker_email)
     
-    booker_template = await get_email_template(db, template_type, 'customer')
-    if booker_template:
-        subject = replace_placeholders(booker_template.subject, booking_data)
-        body = replace_placeholders(booker_template.body_html or booker_template.body, booking_data)
+    template = await get_email_template(db, template_type)
+    
+    should_send_to_customer = template.send_to_customer if template else True
+    should_send_to_engineer = template.send_to_engineer if template else True
+    
+    if should_send_to_customer:
+        if template:
+            subject = replace_placeholders(template.subject, booking_data)
+            body = replace_placeholders(template.body_html, booking_data)
+            
+            if template.logo_url:
+                body = f'<div style="margin-bottom: 20px;"><img src="{template.logo_url}" alt="Company Logo" style="max-height: 80px;"></div>' + body
+        else:
+            subject = f"Booking {template_type.value.title()} - {booking.order_reference}"
+            body = f"""
+            <html>
+            <body style="font-family: Arial, sans-serif; padding: 20px;">
+                <h2>Booking {template_type.value.title()}</h2>
+                <p><strong>Order Reference:</strong> {booking_data['order_reference']}</p>
+                <p><strong>Customer:</strong> {booking_data['customer_name']}</p>
+                <p><strong>Date:</strong> {booking_data['scheduled_date']} at {booking_data['scheduled_time']}</p>
+                <p><strong>Duration:</strong> {booking_data['duration_hours']} hours</p>
+                <p><strong>Product:</strong> {booking_data['product_name']}</p>
+                <p><strong>Engineer:</strong> {booking_data['engineer_name']}</p>
+                <p><strong>Notes:</strong> {booking_data['notes'] or 'N/A'}</p>
+            </body>
+            </html>
+            """
         
-        if booker_template.company_logo_url:
-            body = f'<div style="margin-bottom: 20px;"><img src="{booker_template.company_logo_url}" alt="Company Logo" style="max-height: 80px;"></div>' + body
-        
-        try:
-            results['booker_sent'] = await send_smtp_email(db, [booker_email], subject, body)
-        except Exception as e:
-            results['errors'].append(f'Booker email error: {str(e)}')
-    else:
-        subject = f"Booking {template_type.value.title()} - {booking.order_reference}"
-        body = f"""
-        <html>
-        <body style="font-family: Arial, sans-serif; padding: 20px;">
-            <h2>Booking {template_type.value.title()}</h2>
-            <p><strong>Order Reference:</strong> {booking_data['order_reference']}</p>
-            <p><strong>Customer:</strong> {booking_data['customer_name']}</p>
-            <p><strong>Date:</strong> {booking_data['scheduled_date']} at {booking_data['scheduled_time']}</p>
-            <p><strong>Duration:</strong> {booking_data['duration_hours']} hours</p>
-            <p><strong>Product:</strong> {booking_data['product_name']}</p>
-            <p><strong>Engineer:</strong> {booking_data['engineer_name']}</p>
-            <p><strong>Notes:</strong> {booking_data['notes'] or 'N/A'}</p>
-        </body>
-        </html>
-        """
         try:
             results['booker_sent'] = await send_smtp_email(db, [booker_email], subject, body)
         except Exception as e:
             results['errors'].append(f'Booker email error: {str(e)}')
     
-    engineer_template = await get_email_template(db, template_type, 'engineer')
-    if booking.engineer and booking.engineer.calendar_email:
+    if should_send_to_engineer and booking.engineer and booking.engineer.calendar_email:
         engineer_email = booking.engineer.calendar_email
         
-        if engineer_template:
-            subject = replace_placeholders(engineer_template.subject, booking_data)
-            body = replace_placeholders(engineer_template.body_html or engineer_template.body, booking_data)
+        if template:
+            subject = replace_placeholders(template.subject, booking_data)
+            body = replace_placeholders(template.body_html, booking_data)
             
-            if engineer_template.company_logo_url:
-                body = f'<div style="margin-bottom: 20px;"><img src="{engineer_template.company_logo_url}" alt="Company Logo" style="max-height: 80px;"></div>' + body
+            if template.logo_url:
+                body = f'<div style="margin-bottom: 20px;"><img src="{template.logo_url}" alt="Company Logo" style="max-height: 80px;"></div>' + body
         else:
             subject = f"Booking Assignment - {booking.order_reference}"
             body = f"""
@@ -243,12 +242,12 @@ async def send_booking_email(
     if additional_emails:
         valid_emails = [e for e in additional_emails if e and '@' in e]
         if valid_emails:
-            if booker_template:
-                subject = replace_placeholders(booker_template.subject, booking_data)
-                body = replace_placeholders(booker_template.body_html or booker_template.body, booking_data)
+            if template:
+                subject = replace_placeholders(template.subject, booking_data)
+                body = replace_placeholders(template.body_html, booking_data)
                 
-                if booker_template.company_logo_url:
-                    body = f'<div style="margin-bottom: 20px;"><img src="{booker_template.company_logo_url}" alt="Company Logo" style="max-height: 80px;"></div>' + body
+                if template.logo_url:
+                    body = f'<div style="margin-bottom: 20px;"><img src="{template.logo_url}" alt="Company Logo" style="max-height: 80px;"></div>' + body
             else:
                 subject = f"Booking {template_type.value.title()} - {booking.order_reference}"
                 body = f"""
