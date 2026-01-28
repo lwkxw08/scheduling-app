@@ -195,7 +195,7 @@ class Fee(Base):
     fee_type = Column(String(50), nullable=False)
     amount = Column(Float, nullable=False)
     description = Column(Text, nullable=True)
-    apply_mode = Column(SQLEnum(FeeApplyMode), default=FeeApplyMode.AUTO)  # Auto or requires approval
+    apply_mode = Column(SQLEnum(FeeApplyMode, values_callable=lambda x: [e.value for e in x]), default=FeeApplyMode.AUTO)  # Auto or requires approval
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -245,7 +245,7 @@ class BookingFee(Base):
     booking_id = Column(Integer, ForeignKey("bookings.id"), nullable=False)
     fee_id = Column(Integer, ForeignKey("fees.id"), nullable=False)
     amount = Column(Float, nullable=False)  # Amount at time of application (may differ from fee.amount)
-    status = Column(SQLEnum(BookingFeeStatus), default=BookingFeeStatus.APPROVED)
+    status = Column(SQLEnum(BookingFeeStatus, values_callable=lambda x: [e.value for e in x]), default=BookingFeeStatus.APPROVED)
     waived_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # Admin who waived the fee
     waiver_reason = Column(Text, nullable=True)
     approved_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # Admin who approved (if approval required)
