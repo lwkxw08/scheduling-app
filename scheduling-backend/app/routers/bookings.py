@@ -6,13 +6,16 @@ from datetime import datetime, timedelta
 from typing import List, Optional
 
 from app.database import get_db
-from app.models.database_models import Booking, BookingStatus, Engineer, User, SystemConfig, Fee, Product, ExpediteRequest, ExpediteRequestStatus
+from app.models.database_models import (
+    Booking, BookingStatus, Engineer, User, SystemConfig, Fee, Product, 
+    ExpediteRequest, ExpediteRequestStatus, TemplateType,
+    FeeProductAssignment, FeeChangeTypeAssignment, BookingFee, BookingFeeStatus, FeeApplyMode
+)
 from app.schemas.schemas import BookingCreate, BookingUpdate, BookingResponse, ExpediteRequestCreate, ExpediteRequestResponse
 from app.services.auth import decode_access_token
 from app.services import microsoft_graph
 from app.services.availability import check_specific_slot_availability
 from app.services.email_service import send_booking_email, is_smtp_configured
-from app.models.database_models import TemplateType
 
 router = APIRouter(prefix="/bookings", tags=["Bookings"])
 
@@ -75,6 +78,62 @@ async def calculate_fees(
             cancellation_fee = fee.amount
     
     return expedite_fee, cancellation_fee
+
+
+async def apply_fees_to_booking(
+    db: AsyncSession,
+    booking_id: int,
+    product_id: int,
+    change_type_id: int
+) -> List[BookingFee]:
+    """
+    Apply fees to a booking based on product and change type assignments.
+    Returns list of BookingFee objects created.
+    """
+    applied_fees = []
+    
+    # Get all active fees with their assignments
+    result = await db.execute(
+        select(Fee).where(Fee.is_active == True)
+        .options(
+            selectinload(Fee.product_assignments),
+            selectinload(Fee.change_type_assignments)
+        )
+    )
+    fees = result.scalars().all()
+    
+    for fee in fees:
+        should_apply = False
+        
+        # Check if fee applies to this product
+        product_ids = [a.product_id for a in fee.product_assignments]
+        if product_id in product_ids:
+            should_apply = True
+        
+        # Check if fee applies to this change type
+        change_type_ids = [a.change_type_id for a in fee.change_type_assignments]
+        if change_type_id in change_type_ids:
+            should_apply = True
+        
+        if should_apply:
+            # Determine status based on apply_mode
+            fee_status = BookingFeeStatus.APPROVED
+            if fee.apply_mode == FeeApplyMode.APPROVAL:
+                fee_status = BookingFeeStatus.PENDING
+            
+            booking_fee = BookingFee(
+                booking_id=booking_id,
+                fee_id=fee.id,
+                amount=fee.amount,
+                status=fee_status
+            )
+            db.add(booking_fee)
+            applied_fees.append(booking_fee)
+    
+    if applied_fees:
+        await db.commit()
+    
+    return applied_fees
 
 
 @router.post("/", response_model=BookingResponse)
@@ -175,6 +234,14 @@ async def create_booking(
     db.add(new_booking)
     await db.commit()
     await db.refresh(new_booking)
+    
+    # Apply fees based on product and change type assignments
+    await apply_fees_to_booking(
+        db,
+        new_booking.id,
+        booking_data.product_id,
+        booking_data.change_type_id
+    )
     
     if admin_token and engineer.calendar_email:
         end_time = booking_data.scheduled_date + timedelta(hours=booking_data.duration_hours)

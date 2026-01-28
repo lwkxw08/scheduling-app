@@ -15,12 +15,14 @@ from app.models.database_models import (
     CustomField, SystemConfig, Fee, Booking, BookingStatus, EngineerSchedule,
     EmailTemplate, CalendarEventTemplate, TemplateType,
     RosterPattern, RosterPhase, EngineerRosterAssignment,
-    ExpediteRequest, ExpediteRequestStatus, EngineerUnavailability, BookingStatusUpdate
+    ExpediteRequest, ExpediteRequestStatus, EngineerUnavailability, BookingStatusUpdate,
+    FeeProductAssignment, FeeChangeTypeAssignment, FeeApplyMode, BookingFee, BookingFeeStatus
 )
 from app.schemas.schemas import (
     ProductCreate, ProductUpdate, ProductResponse, ChangeTypeCreate, ChangeTypeResponse,
     EngineerCreate, EngineerResponse, EngineerSkillCreate, EngineerSkillResponse,
-    CustomFieldCreate, CustomFieldResponse, FeeCreate, FeeResponse,
+    CustomFieldCreate, CustomFieldResponse, FeeCreate, FeeUpdate, FeeResponse,
+    FeeApplyMode as FeeApplyModeSchema, BookingFeeResponse, BookingFeeWaive, BookingFeeApprove,
     SystemConfigUpdate, SystemConfigResponse, DashboardStats, UserResponse,
     EngineerScheduleCreate, EngineerScheduleResponse, EngineerScheduleUpdate,
     EmailTemplateCreate, EmailTemplateResponse, CalendarEventTemplateCreate,
@@ -520,16 +522,55 @@ async def create_fee(
 ):
     await get_admin_user(authorization, db)
     
+    # Convert schema enum to model enum
+    apply_mode = FeeApplyMode.AUTO
+    if fee_data.apply_mode == FeeApplyModeSchema.APPROVAL:
+        apply_mode = FeeApplyMode.APPROVAL
+    
     fee = Fee(
         name=fee_data.name,
         fee_type=fee_data.fee_type,
         amount=fee_data.amount,
-        description=fee_data.description
+        description=fee_data.description,
+        apply_mode=apply_mode
     )
     db.add(fee)
     await db.commit()
     await db.refresh(fee)
-    return FeeResponse.model_validate(fee)
+    
+    # Add product assignments
+    if fee_data.product_ids:
+        for product_id in fee_data.product_ids:
+            assignment = FeeProductAssignment(fee_id=fee.id, product_id=product_id)
+            db.add(assignment)
+    
+    # Add change type assignments
+    if fee_data.change_type_ids:
+        for change_type_id in fee_data.change_type_ids:
+            assignment = FeeChangeTypeAssignment(fee_id=fee.id, change_type_id=change_type_id)
+            db.add(assignment)
+    
+    await db.commit()
+    
+    # Reload with assignments
+    result = await db.execute(
+        select(Fee).where(Fee.id == fee.id)
+        .options(selectinload(Fee.product_assignments), selectinload(Fee.change_type_assignments))
+    )
+    fee = result.scalar_one()
+    
+    return FeeResponse(
+        id=fee.id,
+        name=fee.name,
+        fee_type=fee.fee_type,
+        amount=fee.amount,
+        description=fee.description,
+        apply_mode=FeeApplyModeSchema(fee.apply_mode.value) if fee.apply_mode else FeeApplyModeSchema.AUTO,
+        is_active=fee.is_active,
+        created_at=fee.created_at,
+        product_ids=[a.product_id for a in fee.product_assignments],
+        change_type_ids=[a.change_type_id for a in fee.change_type_assignments]
+    )
 
 
 @router.get("/fees", response_model=List[FeeResponse])
@@ -539,29 +580,76 @@ async def get_fees(
 ):
     await get_admin_user(authorization, db)
     
-    result = await db.execute(select(Fee).where(Fee.is_active == True))
+    result = await db.execute(
+        select(Fee).where(Fee.is_active == True)
+        .options(selectinload(Fee.product_assignments), selectinload(Fee.change_type_assignments))
+    )
     fees = result.scalars().all()
-    return [FeeResponse.model_validate(f) for f in fees]
+    
+    return [
+        FeeResponse(
+            id=f.id,
+            name=f.name,
+            fee_type=f.fee_type,
+            amount=f.amount,
+            description=f.description,
+            apply_mode=FeeApplyModeSchema(f.apply_mode.value) if f.apply_mode else FeeApplyModeSchema.AUTO,
+            is_active=f.is_active,
+            created_at=f.created_at,
+            product_ids=[a.product_id for a in f.product_assignments],
+            change_type_ids=[a.change_type_id for a in f.change_type_assignments]
+        )
+        for f in fees
+    ]
 
 
 @router.patch("/fees/{fee_id}")
 async def update_fee(
     fee_id: int,
-    fee_data: FeeCreate,
+    fee_data: FeeUpdate,
     authorization: str = Header(None),
     db: AsyncSession = Depends(get_db)
 ):
     await get_admin_user(authorization, db)
     
-    result = await db.execute(select(Fee).where(Fee.id == fee_id))
+    result = await db.execute(
+        select(Fee).where(Fee.id == fee_id)
+        .options(selectinload(Fee.product_assignments), selectinload(Fee.change_type_assignments))
+    )
     fee = result.scalar_one_or_none()
     if not fee:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Fee not found")
     
-    fee.name = fee_data.name
-    fee.fee_type = fee_data.fee_type
-    fee.amount = fee_data.amount
-    fee.description = fee_data.description
+    if fee_data.name is not None:
+        fee.name = fee_data.name
+    if fee_data.fee_type is not None:
+        fee.fee_type = fee_data.fee_type
+    if fee_data.amount is not None:
+        fee.amount = fee_data.amount
+    if fee_data.description is not None:
+        fee.description = fee_data.description
+    if fee_data.apply_mode is not None:
+        fee.apply_mode = FeeApplyMode.APPROVAL if fee_data.apply_mode == FeeApplyModeSchema.APPROVAL else FeeApplyMode.AUTO
+    
+    # Update product assignments if provided
+    if fee_data.product_ids is not None:
+        # Remove existing assignments
+        for assignment in fee.product_assignments:
+            await db.delete(assignment)
+        # Add new assignments
+        for product_id in fee_data.product_ids:
+            assignment = FeeProductAssignment(fee_id=fee.id, product_id=product_id)
+            db.add(assignment)
+    
+    # Update change type assignments if provided
+    if fee_data.change_type_ids is not None:
+        # Remove existing assignments
+        for assignment in fee.change_type_assignments:
+            await db.delete(assignment)
+        # Add new assignments
+        for change_type_id in fee_data.change_type_ids:
+            assignment = FeeChangeTypeAssignment(fee_id=fee.id, change_type_id=change_type_id)
+            db.add(assignment)
     
     await db.commit()
     return {"message": "Fee updated successfully"}
@@ -583,6 +671,156 @@ async def delete_fee(
     fee.is_active = False
     await db.commit()
     return {"message": "Fee deleted successfully"}
+
+
+# Booking Fee Management Endpoints
+@router.get("/bookings/{booking_id}/fees", response_model=List[BookingFeeResponse])
+async def get_booking_fees(
+    booking_id: int,
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get all fees applied to a booking"""
+    await get_admin_user(authorization, db)
+    
+    result = await db.execute(
+        select(BookingFee).where(BookingFee.booking_id == booking_id)
+        .options(selectinload(BookingFee.fee))
+    )
+    booking_fees = result.scalars().all()
+    
+    return [
+        BookingFeeResponse(
+            id=bf.id,
+            booking_id=bf.booking_id,
+            fee_id=bf.fee_id,
+            amount=bf.amount,
+            status=bf.status.value,
+            waived_by_id=bf.waived_by_id,
+            waiver_reason=bf.waiver_reason,
+            approved_by_id=bf.approved_by_id,
+            created_at=bf.created_at,
+            fee_name=bf.fee.name if bf.fee else None,
+            fee_type=bf.fee.fee_type if bf.fee else None
+        )
+        for bf in booking_fees
+    ]
+
+
+@router.post("/bookings/{booking_id}/fees/{fee_id}/waive")
+async def waive_booking_fee(
+    booking_id: int,
+    fee_id: int,
+    waive_data: BookingFeeWaive,
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """Waive a fee on a booking"""
+    admin_user = await get_admin_user(authorization, db)
+    
+    result = await db.execute(
+        select(BookingFee).where(
+            BookingFee.booking_id == booking_id,
+            BookingFee.fee_id == fee_id
+        )
+    )
+    booking_fee = result.scalar_one_or_none()
+    if not booking_fee:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking fee not found")
+    
+    booking_fee.status = BookingFeeStatus.WAIVED
+    booking_fee.waived_by_id = admin_user.id
+    booking_fee.waiver_reason = waive_data.waiver_reason
+    
+    await db.commit()
+    return {"message": "Fee waived successfully"}
+
+
+@router.post("/bookings/{booking_id}/fees/{fee_id}/approve")
+async def approve_booking_fee(
+    booking_id: int,
+    fee_id: int,
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """Approve a pending fee on a booking"""
+    admin_user = await get_admin_user(authorization, db)
+    
+    result = await db.execute(
+        select(BookingFee).where(
+            BookingFee.booking_id == booking_id,
+            BookingFee.fee_id == fee_id
+        )
+    )
+    booking_fee = result.scalar_one_or_none()
+    if not booking_fee:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking fee not found")
+    
+    if booking_fee.status != BookingFeeStatus.PENDING:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Fee is not pending approval")
+    
+    booking_fee.status = BookingFeeStatus.APPROVED
+    booking_fee.approved_by_id = admin_user.id
+    
+    await db.commit()
+    return {"message": "Fee approved successfully"}
+
+
+@router.delete("/bookings/{booking_id}/fees/{booking_fee_id}")
+async def remove_booking_fee(
+    booking_id: int,
+    booking_fee_id: int,
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """Remove a fee from a booking"""
+    await get_admin_user(authorization, db)
+    
+    result = await db.execute(
+        select(BookingFee).where(
+            BookingFee.id == booking_fee_id,
+            BookingFee.booking_id == booking_id
+        )
+    )
+    booking_fee = result.scalar_one_or_none()
+    if not booking_fee:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking fee not found")
+    
+    await db.delete(booking_fee)
+    await db.commit()
+    return {"message": "Fee removed from booking"}
+
+
+@router.get("/fees/pending-approvals", response_model=List[BookingFeeResponse])
+async def get_pending_fee_approvals(
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get all booking fees pending admin approval"""
+    await get_admin_user(authorization, db)
+    
+    result = await db.execute(
+        select(BookingFee).where(BookingFee.status == BookingFeeStatus.PENDING)
+        .options(selectinload(BookingFee.fee), selectinload(BookingFee.booking))
+    )
+    booking_fees = result.scalars().all()
+    
+    return [
+        BookingFeeResponse(
+            id=bf.id,
+            booking_id=bf.booking_id,
+            fee_id=bf.fee_id,
+            amount=bf.amount,
+            status=bf.status.value,
+            waived_by_id=bf.waived_by_id,
+            waiver_reason=bf.waiver_reason,
+            approved_by_id=bf.approved_by_id,
+            created_at=bf.created_at,
+            fee_name=bf.fee.name if bf.fee else None,
+            fee_type=bf.fee.fee_type if bf.fee else None
+        )
+        for bf in booking_fees
+    ]
 
 
 @router.get("/config", response_model=List[SystemConfigResponse])

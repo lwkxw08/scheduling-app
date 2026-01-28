@@ -69,6 +69,9 @@ export default function AdminPage() {
   const [feeType, setFeeType] = useState('');
   const [feeAmount, setFeeAmount] = useState('');
   const [feeDescription, setFeeDescription] = useState('');
+  const [feeApplyMode, setFeeApplyMode] = useState<'auto' | 'approval'>('auto');
+  const [feeProductIds, setFeeProductIds] = useState<number[]>([]);
+  const [feeChangeTypeIds, setFeeChangeTypeIds] = useState<number[]>([]);
 
   const [showConfigDialog, setShowConfigDialog] = useState(false);
   const [configKey, setConfigKey] = useState('');
@@ -358,6 +361,9 @@ export default function AdminPage() {
         fee_type: feeType,
         amount: parseFloat(feeAmount),
         description: feeDescription || undefined,
+        apply_mode: feeApplyMode,
+        product_ids: feeProductIds.length > 0 ? feeProductIds : undefined,
+        change_type_ids: feeChangeTypeIds.length > 0 ? feeChangeTypeIds : undefined,
       };
       
       if (editingFee) {
@@ -371,6 +377,9 @@ export default function AdminPage() {
       setFeeType('');
       setFeeAmount('');
       setFeeDescription('');
+      setFeeApplyMode('auto');
+      setFeeProductIds([]);
+      setFeeChangeTypeIds([]);
       loadAllData();
     } catch (err: any) {
       setError(err.message);
@@ -1436,42 +1445,107 @@ export default function AdminPage() {
                 </div>
                 <Dialog open={showFeeDialog} onOpenChange={setShowFeeDialog}>
                   <DialogTrigger asChild>
-                    <Button onClick={() => { setEditingFee(null); setFeeName(''); setFeeType(''); setFeeAmount(''); setFeeDescription(''); }}>
+                    <Button onClick={() => { setEditingFee(null); setFeeName(''); setFeeType(''); setFeeAmount(''); setFeeDescription(''); setFeeApplyMode('auto'); setFeeProductIds([]); setFeeChangeTypeIds([]); }}>
                       <Plus className="w-4 h-4 mr-2" />
                       Add Fee
                     </Button>
                   </DialogTrigger>
-                  <DialogContent>
+                  <DialogContent className="max-w-2xl">
                     <DialogHeader>
                       <DialogTitle>{editingFee ? 'Edit Fee' : 'Add Fee'}</DialogTitle>
                     </DialogHeader>
                     <div className="space-y-4">
-                      <div className="space-y-2">
-                        <Label>Fee Name</Label>
-                        <Input value={feeName} onChange={(e) => setFeeName(e.target.value)} />
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label>Fee Name</Label>
+                          <Input value={feeName} onChange={(e) => setFeeName(e.target.value)} />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Fee Type</Label>
+                          <Select value={feeType} onValueChange={setFeeType}>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select type" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="late_change">Late Change</SelectItem>
+                              <SelectItem value="cancellation">Cancellation</SelectItem>
+                              <SelectItem value="expedite">Expedite</SelectItem>
+                              <SelectItem value="other">Other</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
                       </div>
-                      <div className="space-y-2">
-                        <Label>Fee Type</Label>
-                        <Select value={feeType} onValueChange={setFeeType}>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select type" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="late_change">Late Change</SelectItem>
-                            <SelectItem value="cancellation">Cancellation</SelectItem>
-                            <SelectItem value="expedite">Expedite</SelectItem>
-                            <SelectItem value="other">Other</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Amount (£)</Label>
-                        <Input type="number" step="0.01" value={feeAmount} onChange={(e) => setFeeAmount(e.target.value)} />
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label>Amount (£)</Label>
+                          <Input type="number" step="0.01" value={feeAmount} onChange={(e) => setFeeAmount(e.target.value)} />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Apply Mode</Label>
+                          <Select value={feeApplyMode} onValueChange={(v) => setFeeApplyMode(v as 'auto' | 'approval')}>
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="auto">Auto-apply (added automatically)</SelectItem>
+                              <SelectItem value="approval">Requires Admin Approval</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
                       </div>
                       <div className="space-y-2">
                         <Label>Description</Label>
                         <Textarea value={feeDescription} onChange={(e) => setFeeDescription(e.target.value)} />
                       </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label>Applies to Products</Label>
+                          <div className="border rounded-md p-3 max-h-32 overflow-y-auto space-y-2">
+                            {products.map((product) => (
+                              <div key={product.id} className="flex items-center space-x-2">
+                                <Checkbox
+                                  id={`fee-product-${product.id}`}
+                                  checked={feeProductIds.includes(product.id)}
+                                  onCheckedChange={(checked) => {
+                                    if (checked) {
+                                      setFeeProductIds([...feeProductIds, product.id]);
+                                    } else {
+                                      setFeeProductIds(feeProductIds.filter(id => id !== product.id));
+                                    }
+                                  }}
+                                />
+                                <label htmlFor={`fee-product-${product.id}`} className="text-sm">{product.name}</label>
+                              </div>
+                            ))}
+                            {products.length === 0 && <p className="text-sm text-gray-500">No products available</p>}
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Applies to Change Types</Label>
+                          <div className="border rounded-md p-3 max-h-32 overflow-y-auto space-y-2">
+                            {changeTypes.map((ct) => (
+                              <div key={ct.id} className="flex items-center space-x-2">
+                                <Checkbox
+                                  id={`fee-ct-${ct.id}`}
+                                  checked={feeChangeTypeIds.includes(ct.id)}
+                                  onCheckedChange={(checked) => {
+                                    if (checked) {
+                                      setFeeChangeTypeIds([...feeChangeTypeIds, ct.id]);
+                                    } else {
+                                      setFeeChangeTypeIds(feeChangeTypeIds.filter(id => id !== ct.id));
+                                    }
+                                  }}
+                                />
+                                <label htmlFor={`fee-ct-${ct.id}`} className="text-sm">{ct.name}</label>
+                              </div>
+                            ))}
+                            {changeTypes.length === 0 && <p className="text-sm text-gray-500">No change types available</p>}
+                          </div>
+                        </div>
+                      </div>
+                      <p className="text-sm text-gray-500">
+                        Select products and/or change types this fee should apply to. When a booking is created with a matching product or change type, this fee will be automatically added.
+                      </p>
                     </div>
                     <DialogFooter>
                       <Button variant="outline" onClick={() => setShowFeeDialog(false)}>Cancel</Button>
@@ -1487,7 +1561,8 @@ export default function AdminPage() {
                       <TableHead>Name</TableHead>
                       <TableHead>Type</TableHead>
                       <TableHead>Amount</TableHead>
-                      <TableHead>Description</TableHead>
+                      <TableHead>Apply Mode</TableHead>
+                      <TableHead>Applies To</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -1497,7 +1572,34 @@ export default function AdminPage() {
                         <TableCell className="font-medium">{fee.name}</TableCell>
                         <TableCell>{fee.fee_type}</TableCell>
                         <TableCell>£{fee.amount.toFixed(2)}</TableCell>
-                        <TableCell>{fee.description || '-'}</TableCell>
+                        <TableCell>
+                          <Badge variant={fee.apply_mode === 'auto' ? 'default' : 'secondary'}>
+                            {fee.apply_mode === 'auto' ? 'Auto' : 'Approval'}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex flex-wrap gap-1">
+                            {fee.product_ids && fee.product_ids.length > 0 && fee.product_ids.map(pid => {
+                              const product = products.find(p => p.id === pid);
+                              return product ? (
+                                <Badge key={`p-${pid}`} variant="outline" className="text-xs">
+                                  {product.name}
+                                </Badge>
+                              ) : null;
+                            })}
+                            {fee.change_type_ids && fee.change_type_ids.length > 0 && fee.change_type_ids.map(ctid => {
+                              const ct = changeTypes.find(c => c.id === ctid);
+                              return ct ? (
+                                <Badge key={`ct-${ctid}`} variant="outline" className="text-xs bg-blue-50">
+                                  {ct.name}
+                                </Badge>
+                              ) : null;
+                            })}
+                            {(!fee.product_ids || fee.product_ids.length === 0) && (!fee.change_type_ids || fee.change_type_ids.length === 0) && (
+                              <span className="text-gray-400 text-sm">Not assigned</span>
+                            )}
+                          </div>
+                        </TableCell>
                         <TableCell className="text-right">
                           <Button
                             variant="ghost"
@@ -1508,6 +1610,9 @@ export default function AdminPage() {
                               setFeeType(fee.fee_type);
                               setFeeAmount(fee.amount.toString());
                               setFeeDescription(fee.description || '');
+                              setFeeApplyMode(fee.apply_mode || 'auto');
+                              setFeeProductIds(fee.product_ids || []);
+                              setFeeChangeTypeIds(fee.change_type_ids || []);
                               setShowFeeDialog(true);
                             }}
                           >

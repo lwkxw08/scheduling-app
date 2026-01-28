@@ -45,6 +45,7 @@ async def run_migrations(conn):
         ("products", "expedite_fee", "FLOAT DEFAULT 0.0"),
         ("products", "expedite_contact_emails", "JSON"),
         ("calendar_event_templates", "is_teams_meeting", "BOOLEAN DEFAULT 0"),
+        ("fees", "apply_mode", "VARCHAR(50) DEFAULT 'auto'"),
     ]
     
     for table_name, column_name, column_def in migrations:

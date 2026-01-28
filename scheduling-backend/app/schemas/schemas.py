@@ -260,11 +260,29 @@ class AvailabilityResponse(BaseModel):
     engineers: List[EngineerAvailability]
 
 
+class FeeApplyMode(str, Enum):
+    AUTO = "auto"
+    APPROVAL = "approval"
+
+
 class FeeCreate(BaseModel):
     name: str
     fee_type: str
     amount: float
     description: Optional[str] = None
+    apply_mode: FeeApplyMode = FeeApplyMode.AUTO
+    product_ids: Optional[List[int]] = None  # Products this fee applies to
+    change_type_ids: Optional[List[int]] = None  # Change types this fee applies to
+
+
+class FeeUpdate(BaseModel):
+    name: Optional[str] = None
+    fee_type: Optional[str] = None
+    amount: Optional[float] = None
+    description: Optional[str] = None
+    apply_mode: Optional[FeeApplyMode] = None
+    product_ids: Optional[List[int]] = None
+    change_type_ids: Optional[List[int]] = None
 
 
 class FeeResponse(BaseModel):
@@ -273,11 +291,50 @@ class FeeResponse(BaseModel):
     fee_type: str
     amount: float
     description: Optional[str]
+    apply_mode: FeeApplyMode
     is_active: bool
     created_at: datetime
+    product_ids: Optional[List[int]] = None
+    change_type_ids: Optional[List[int]] = None
 
     class Config:
         from_attributes = True
+
+
+class BookingFeeStatus(str, Enum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    WAIVED = "waived"
+
+
+class BookingFeeCreate(BaseModel):
+    fee_id: int
+    amount: Optional[float] = None  # If not provided, uses fee.amount
+
+
+class BookingFeeResponse(BaseModel):
+    id: int
+    booking_id: int
+    fee_id: int
+    amount: float
+    status: BookingFeeStatus
+    waived_by_id: Optional[int]
+    waiver_reason: Optional[str]
+    approved_by_id: Optional[int]
+    created_at: datetime
+    fee_name: Optional[str] = None
+    fee_type: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class BookingFeeWaive(BaseModel):
+    waiver_reason: Optional[str] = None
+
+
+class BookingFeeApprove(BaseModel):
+    pass  # No additional fields needed
 
 
 class SystemConfigUpdate(BaseModel):

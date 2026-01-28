@@ -94,6 +94,7 @@ class Product(Base):
     skills = relationship("EngineerSkill", back_populates="product")
     bookings = relationship("Booking", back_populates="product")
     expedite_requests = relationship("ExpediteRequest", back_populates="product")
+    fee_assignments = relationship("FeeProductAssignment", back_populates="product", cascade="all, delete-orphan")
 
 
 class ChangeType(Base):
@@ -107,6 +108,7 @@ class ChangeType(Base):
 
     skills = relationship("EngineerSkill", back_populates="change_type")
     bookings = relationship("Booking", back_populates="change_type")
+    fee_assignments = relationship("FeeChangeTypeAssignment", back_populates="change_type", cascade="all, delete-orphan")
 
 
 class EngineerSkill(Base):
@@ -167,6 +169,7 @@ class Booking(Base):
     product = relationship("Product", back_populates="bookings")
     change_type = relationship("ChangeType", back_populates="bookings")
     status_updates = relationship("BookingStatusUpdate", back_populates="booking", cascade="all, delete-orphan")
+    fees = relationship("BookingFee", back_populates="booking", cascade="all, delete-orphan")
 
 
 class SystemConfig(Base):
@@ -179,6 +182,11 @@ class SystemConfig(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class FeeApplyMode(str, enum.Enum):
+    AUTO = "auto"  # Automatically applied to bookings
+    APPROVAL = "approval"  # Requires admin approval before applying
+
+
 class Fee(Base):
     __tablename__ = "fees"
 
@@ -187,9 +195,67 @@ class Fee(Base):
     fee_type = Column(String(50), nullable=False)
     amount = Column(Float, nullable=False)
     description = Column(Text, nullable=True)
+    apply_mode = Column(SQLEnum(FeeApplyMode), default=FeeApplyMode.AUTO)  # Auto or requires approval
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    product_assignments = relationship("FeeProductAssignment", back_populates="fee", cascade="all, delete-orphan")
+    change_type_assignments = relationship("FeeChangeTypeAssignment", back_populates="fee", cascade="all, delete-orphan")
+
+
+class FeeProductAssignment(Base):
+    """Links fees to specific products"""
+    __tablename__ = "fee_product_assignments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    fee_id = Column(Integer, ForeignKey("fees.id"), nullable=False)
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    fee = relationship("Fee", back_populates="product_assignments")
+    product = relationship("Product", back_populates="fee_assignments")
+
+
+class FeeChangeTypeAssignment(Base):
+    """Links fees to specific change types"""
+    __tablename__ = "fee_change_type_assignments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    fee_id = Column(Integer, ForeignKey("fees.id"), nullable=False)
+    change_type_id = Column(Integer, ForeignKey("change_types.id"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    fee = relationship("Fee", back_populates="change_type_assignments")
+    change_type = relationship("ChangeType", back_populates="fee_assignments")
+
+
+class BookingFeeStatus(str, enum.Enum):
+    PENDING = "pending"  # Fee requires admin approval
+    APPROVED = "approved"  # Fee approved and applied
+    WAIVED = "waived"  # Fee waived by admin
+
+
+class BookingFee(Base):
+    """Individual fees applied to bookings with approval/waiver tracking"""
+    __tablename__ = "booking_fees"
+
+    id = Column(Integer, primary_key=True, index=True)
+    booking_id = Column(Integer, ForeignKey("bookings.id"), nullable=False)
+    fee_id = Column(Integer, ForeignKey("fees.id"), nullable=False)
+    amount = Column(Float, nullable=False)  # Amount at time of application (may differ from fee.amount)
+    status = Column(SQLEnum(BookingFeeStatus), default=BookingFeeStatus.APPROVED)
+    waived_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # Admin who waived the fee
+    waiver_reason = Column(Text, nullable=True)
+    approved_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # Admin who approved (if approval required)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    booking = relationship("Booking", back_populates="fees")
+    fee = relationship("Fee")
+    waived_by = relationship("User", foreign_keys=[waived_by_id])
+    approved_by = relationship("User", foreign_keys=[approved_by_id])
 
 
 class TemplateType(str, enum.Enum):

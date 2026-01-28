@@ -105,14 +105,35 @@ export interface AvailabilityResponse {
   engineers: EngineerAvailability[];
 }
 
+export type FeeApplyMode = 'auto' | 'approval';
+
 export interface Fee {
   id: number;
   name: string;
   fee_type: string;
   amount: number;
   description: string | null;
+  apply_mode: FeeApplyMode;
   is_active: boolean;
   created_at: string;
+  product_ids: number[] | null;
+  change_type_ids: number[] | null;
+}
+
+export type BookingFeeStatus = 'pending' | 'approved' | 'waived';
+
+export interface BookingFee {
+  id: number;
+  booking_id: number;
+  fee_id: number;
+  amount: number;
+  status: BookingFeeStatus;
+  waived_by_id: number | null;
+  waiver_reason: string | null;
+  approved_by_id: number | null;
+  created_at: string;
+  fee_name: string | null;
+  fee_type: string | null;
 }
 
 export interface SystemConfig {
