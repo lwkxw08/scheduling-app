@@ -235,6 +235,7 @@ async def create_booking(
         .where(Booking.id == new_booking.id)
         .options(
             selectinload(Booking.engineer).selectinload(Engineer.user),
+            selectinload(Booking.engineer).selectinload(Engineer.schedules),
             selectinload(Booking.product),
             selectinload(Booking.change_type)
         )
@@ -254,12 +255,14 @@ async def get_bookings(
     if user.role.value == "admin":
         query = select(Booking).options(
             selectinload(Booking.engineer).selectinload(Engineer.user),
+            selectinload(Booking.engineer).selectinload(Engineer.schedules),
             selectinload(Booking.product),
             selectinload(Booking.change_type)
         ).order_by(Booking.scheduled_date.desc())
     else:
         query = select(Booking).where(Booking.booker_id == user.id).options(
             selectinload(Booking.engineer).selectinload(Engineer.user),
+            selectinload(Booking.engineer).selectinload(Engineer.schedules),
             selectinload(Booking.product),
             selectinload(Booking.change_type)
         ).order_by(Booking.scheduled_date.desc())
@@ -283,6 +286,7 @@ async def get_booking(
         .where(Booking.id == booking_id)
         .options(
             selectinload(Booking.engineer).selectinload(Engineer.user),
+            selectinload(Booking.engineer).selectinload(Engineer.schedules),
             selectinload(Booking.product),
             selectinload(Booking.change_type)
         )
@@ -365,6 +369,7 @@ async def update_booking(
         .where(Booking.id == booking.id)
         .options(
             selectinload(Booking.engineer).selectinload(Engineer.user),
+            selectinload(Booking.engineer).selectinload(Engineer.schedules),
             selectinload(Booking.product),
             selectinload(Booking.change_type)
         )
