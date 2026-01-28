@@ -743,6 +743,65 @@ class ApiService {
   async removeBookingFee(bookingFeeId: number) {
     return this.request<any>(`/admin/booking-fees/${bookingFeeId}`, { method: 'DELETE' });
   }
+
+  // Email Rules
+  async getEmailRules() {
+    return this.request<any[]>('/admin/email-rules');
+  }
+
+  async getEmailRule(ruleId: number) {
+    return this.request<any>(`/admin/email-rules/${ruleId}`);
+  }
+
+  async createEmailRule(data: {
+    name: string;
+    description?: string;
+    trigger_type: string;
+    trigger_hours?: number;
+    condition_status?: string;
+    email_template_id: number;
+    recipient_types: string[];
+    additional_emails?: string[];
+    is_active?: boolean;
+  }) {
+    return this.request<any>('/admin/email-rules', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateEmailRule(ruleId: number, data: {
+    name?: string;
+    description?: string;
+    trigger_type?: string;
+    trigger_hours?: number;
+    condition_status?: string;
+    email_template_id?: number;
+    recipient_types?: string[];
+    additional_emails?: string[];
+    is_active?: boolean;
+  }) {
+    return this.request<any>(`/admin/email-rules/${ruleId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteEmailRule(ruleId: number) {
+    return this.request<any>(`/admin/email-rules/${ruleId}`, { method: 'DELETE' });
+  }
+
+  async toggleEmailRule(ruleId: number) {
+    return this.request<any>(`/admin/email-rules/${ruleId}/toggle`, { method: 'POST' });
+  }
+
+  async getEmailRuleLogs(ruleId: number) {
+    return this.request<any[]>(`/admin/email-rules/${ruleId}/logs`);
+  }
+
+  async processEmailRules() {
+    return this.request<any>('/admin/email-rules/process', { method: 'POST' });
+  }
 }
 
 export const api = new ApiService();

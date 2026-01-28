@@ -16,7 +16,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Checkbox } from '../components/ui/checkbox';
 import { 
   ArrowLeft, Plus, Edit, Trash2, Users,
-  Calendar, UserCheck, Clock, Settings, Mail, CalendarDays, Upload, Loader2, AlertCircle, Download, BarChart3, FileSpreadsheet
+  Calendar, UserCheck, Clock, Settings, Mail, CalendarDays, Upload, Loader2, AlertCircle, Download, BarChart3, FileSpreadsheet, ToggleLeft, ToggleRight
 } from 'lucide-react';
 import RosterPatternBuilder from '../components/RosterPatternBuilder';
 import { RichTextEditor } from '../components/RichTextEditor';
@@ -169,6 +169,21 @@ export default function AdminPage() {
   const [emailPreviewSubject, setEmailPreviewSubject] = useState('');
   const [emailPreviewBody, setEmailPreviewBody] = useState('');
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
+
+  // Email Rules state
+  const [emailRules, setEmailRules] = useState<any[]>([]);
+  const [showEmailRuleDialog, setShowEmailRuleDialog] = useState(false);
+  const [editingEmailRule, setEditingEmailRule] = useState<any | null>(null);
+  const [emailRuleName, setEmailRuleName] = useState('');
+  const [emailRuleDescription, setEmailRuleDescription] = useState('');
+  const [emailRuleTriggerType, setEmailRuleTriggerType] = useState('time_before_booking');
+  const [emailRuleTriggerHours, setEmailRuleTriggerHours] = useState('24');
+  const [emailRuleConditionStatus, setEmailRuleConditionStatus] = useState('');
+  const [emailRuleTemplateId, setEmailRuleTemplateId] = useState<number | null>(null);
+  const [emailRuleRecipientTypes, setEmailRuleRecipientTypes] = useState<string[]>(['engineer']);
+  const [emailRuleAdditionalEmails, setEmailRuleAdditionalEmails] = useState('');
+  const [emailRuleIsActive, setEmailRuleIsActive] = useState(true);
+  const [isProcessingRules, setIsProcessingRules] = useState(false);
 
   useEffect(() => {
     if (user?.role !== 'admin') {
@@ -765,6 +780,125 @@ export default function AdminPage() {
 
   const nonEngineerUsers = users.filter(u => !engineers.some(e => e.user_id === u.id));
 
+  // Email Rules handlers
+  const loadEmailRules = async () => {
+    try {
+      const data = await api.getEmailRules();
+      setEmailRules(data);
+    } catch (err: any) {
+      console.error('Failed to load email rules:', err);
+    }
+  };
+
+  useEffect(() => {
+    loadEmailRules();
+  }, []);
+
+  const resetEmailRuleForm = () => {
+    setEditingEmailRule(null);
+    setEmailRuleName('');
+    setEmailRuleDescription('');
+    setEmailRuleTriggerType('time_before_booking');
+    setEmailRuleTriggerHours('24');
+    setEmailRuleConditionStatus('');
+    setEmailRuleTemplateId(null);
+    setEmailRuleRecipientTypes(['engineer']);
+    setEmailRuleAdditionalEmails('');
+    setEmailRuleIsActive(true);
+  };
+
+  const openEditEmailRule = (rule: any) => {
+    setEditingEmailRule(rule);
+    setEmailRuleName(rule.name);
+    setEmailRuleDescription(rule.description || '');
+    setEmailRuleTriggerType(rule.trigger_type);
+    setEmailRuleTriggerHours(rule.trigger_hours?.toString() || '24');
+    setEmailRuleConditionStatus(rule.condition_status || '');
+    setEmailRuleTemplateId(rule.email_template_id);
+    setEmailRuleRecipientTypes(rule.recipient_types || ['engineer']);
+    setEmailRuleAdditionalEmails(rule.additional_emails?.join(', ') || '');
+    setEmailRuleIsActive(rule.is_active);
+    setShowEmailRuleDialog(true);
+  };
+
+  const handleSaveEmailRule = async () => {
+    if (!emailRuleName || !emailRuleTemplateId) {
+      setError('Please fill in all required fields');
+      return;
+    }
+
+    try {
+      const additionalEmails = emailRuleAdditionalEmails
+        .split(',')
+        .map(e => e.trim())
+        .filter(e => e);
+
+      const data = {
+        name: emailRuleName,
+        description: emailRuleDescription || undefined,
+        trigger_type: emailRuleTriggerType,
+        trigger_hours: emailRuleTriggerHours ? parseInt(emailRuleTriggerHours) : undefined,
+        condition_status: emailRuleConditionStatus || undefined,
+        email_template_id: emailRuleTemplateId,
+        recipient_types: emailRuleRecipientTypes,
+        additional_emails: additionalEmails.length > 0 ? additionalEmails : undefined,
+        is_active: emailRuleIsActive,
+      };
+
+      if (editingEmailRule) {
+        await api.updateEmailRule(editingEmailRule.id, data);
+      } else {
+        await api.createEmailRule(data);
+      }
+      setShowEmailRuleDialog(false);
+      resetEmailRuleForm();
+      loadEmailRules();
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
+
+  const handleDeleteEmailRule = async (id: number) => {
+    if (confirm('Are you sure you want to delete this email rule?')) {
+      try {
+        await api.deleteEmailRule(id);
+        loadEmailRules();
+      } catch (err: any) {
+        setError(err.message);
+      }
+    }
+  };
+
+  const handleToggleEmailRule = async (id: number) => {
+    try {
+      await api.toggleEmailRule(id);
+      loadEmailRules();
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
+
+  const handleProcessEmailRules = async () => {
+    setIsProcessingRules(true);
+    try {
+      const result = await api.processEmailRules();
+      alert(`Email rules processed. ${result.results?.length || 0} rules checked.`);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setIsProcessingRules(false);
+    }
+  };
+
+  const getTriggerTypeLabel = (type: string) => {
+    switch (type) {
+      case 'time_before_booking': return 'Time Before Booking';
+      case 'time_after_booking_created': return 'Time After Booking Created';
+      case 'status_is': return 'When Status Is';
+      default: return type;
+    }
+  };
+
   // Expedite Request handlers
   const loadExpediteRequests = async () => {
     try {
@@ -1095,19 +1229,20 @@ export default function AdminPage() {
         )}
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-11">
-            <TabsTrigger value="products">Products</TabsTrigger>
-            <TabsTrigger value="change-types">Change Types</TabsTrigger>
-            <TabsTrigger value="engineers">Engineers</TabsTrigger>
-            <TabsTrigger value="roster-patterns">Rosters</TabsTrigger>
-            <TabsTrigger value="fields">Custom Fields</TabsTrigger>
-            <TabsTrigger value="fees">Fees</TabsTrigger>
-            <TabsTrigger value="expedite-requests">Expedite</TabsTrigger>
-            <TabsTrigger value="reports">Reports</TabsTrigger>
-            <TabsTrigger value="email-templates">Email</TabsTrigger>
-            <TabsTrigger value="calendar-templates">Calendar</TabsTrigger>
-            <TabsTrigger value="config">Settings</TabsTrigger>
-          </TabsList>
+                    <TabsList className="grid w-full grid-cols-12">
+                      <TabsTrigger value="products">Products</TabsTrigger>
+                      <TabsTrigger value="change-types">Change Types</TabsTrigger>
+                      <TabsTrigger value="engineers">Engineers</TabsTrigger>
+                      <TabsTrigger value="roster-patterns">Rosters</TabsTrigger>
+                      <TabsTrigger value="fields">Custom Fields</TabsTrigger>
+                      <TabsTrigger value="fees">Fees</TabsTrigger>
+                      <TabsTrigger value="expedite-requests">Expedite</TabsTrigger>
+                      <TabsTrigger value="reports">Reports</TabsTrigger>
+                      <TabsTrigger value="email-templates">Email</TabsTrigger>
+                      <TabsTrigger value="email-rules">Rules</TabsTrigger>
+                      <TabsTrigger value="calendar-templates">Calendar</TabsTrigger>
+                      <TabsTrigger value="config">Settings</TabsTrigger>
+                    </TabsList>
 
           <TabsContent value="products">
             <Card>
@@ -2302,6 +2437,289 @@ export default function AdminPage() {
                               <Edit className="w-4 h-4" />
                             </Button>
                             <Button variant="ghost" size="sm" onClick={() => handleDeleteEmailTemplate(template.id)}>
+                              <Trash2 className="w-4 h-4 text-red-500" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="email-rules">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between">
+                <div>
+                  <CardTitle>Email Rules</CardTitle>
+                  <CardDescription>Create automated email rules for reminders and notifications based on booking conditions</CardDescription>
+                </div>
+                <div className="flex gap-2">
+                  <Button 
+                    variant="outline" 
+                    onClick={handleProcessEmailRules}
+                    disabled={isProcessingRules}
+                  >
+                    {isProcessingRules ? 'Processing...' : 'Process Rules Now'}
+                  </Button>
+                  <Dialog open={showEmailRuleDialog} onOpenChange={setShowEmailRuleDialog}>
+                    <DialogTrigger asChild>
+                      <Button onClick={resetEmailRuleForm}>
+                        <Plus className="w-4 h-4 mr-2" />
+                        Add Email Rule
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+                      <DialogHeader>
+                        <DialogTitle>{editingEmailRule ? 'Edit Email Rule' : 'Create Email Rule'}</DialogTitle>
+                        <DialogDescription>
+                          Create rules to automatically send emails based on booking conditions
+                        </DialogDescription>
+                      </DialogHeader>
+                      <div className="space-y-4">
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label>Rule Name *</Label>
+                            <Input 
+                              value={emailRuleName}
+                              onChange={(e) => setEmailRuleName(e.target.value)}
+                              placeholder="e.g., 24hr Reminder"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Email Template *</Label>
+                            <Select value={emailRuleTemplateId?.toString() || ''} onValueChange={(v) => setEmailRuleTemplateId(parseInt(v))}>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select template" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {emailTemplates.map((t) => (
+                                  <SelectItem key={t.id} value={t.id.toString()}>{t.name}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label>Description</Label>
+                          <Input 
+                            value={emailRuleDescription}
+                            onChange={(e) => setEmailRuleDescription(e.target.value)}
+                            placeholder="e.g., Send reminder to engineer 24 hours before booking"
+                          />
+                        </div>
+
+                        <div className="border-t pt-4">
+                          <Label className="text-base font-medium">Trigger Conditions</Label>
+                          <div className="mt-3 space-y-4">
+                            <div className="space-y-2">
+                              <Label>Trigger Type</Label>
+                              <Select value={emailRuleTriggerType} onValueChange={setEmailRuleTriggerType}>
+                                <SelectTrigger>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="time_before_booking">Time Before Booking</SelectItem>
+                                  <SelectItem value="time_after_booking_created">Time After Booking Created</SelectItem>
+                                  <SelectItem value="status_is">When Status Is</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+
+                            {(emailRuleTriggerType === 'time_before_booking' || emailRuleTriggerType === 'time_after_booking_created') && (
+                              <div className="space-y-2">
+                                <Label>Hours</Label>
+                                <Input 
+                                  type="number"
+                                  value={emailRuleTriggerHours}
+                                  onChange={(e) => setEmailRuleTriggerHours(e.target.value)}
+                                  placeholder="e.g., 24"
+                                />
+                                <p className="text-xs text-gray-500">
+                                  {emailRuleTriggerType === 'time_before_booking' 
+                                    ? 'Hours before the scheduled booking date/time' 
+                                    : 'Hours after the booking was created'}
+                                </p>
+                              </div>
+                            )}
+
+                            <div className="space-y-2">
+                              <Label>Required Booking Status {emailRuleTriggerType === 'status_is' ? '*' : '(Optional)'}</Label>
+                              <Select value={emailRuleConditionStatus} onValueChange={setEmailRuleConditionStatus}>
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Any status" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="">Any status</SelectItem>
+                                  <SelectItem value="pending">Pending</SelectItem>
+                                  <SelectItem value="confirmed">Confirmed</SelectItem>
+                                  <SelectItem value="in_progress">In Progress</SelectItem>
+                                  <SelectItem value="completed">Completed</SelectItem>
+                                  <SelectItem value="cancelled">Cancelled</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <p className="text-xs text-gray-500">
+                                Only send email if booking has this status
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="border-t pt-4">
+                          <Label className="text-base font-medium">Recipients</Label>
+                          <div className="mt-3 space-y-3">
+                            <div className="flex flex-wrap gap-4">
+                              <label className="flex items-center gap-2">
+                                <input
+                                  type="checkbox"
+                                  checked={emailRuleRecipientTypes.includes('engineer')}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      setEmailRuleRecipientTypes([...emailRuleRecipientTypes, 'engineer']);
+                                    } else {
+                                      setEmailRuleRecipientTypes(emailRuleRecipientTypes.filter(r => r !== 'engineer'));
+                                    }
+                                  }}
+                                  className="rounded"
+                                />
+                                <span>Engineer</span>
+                              </label>
+                              <label className="flex items-center gap-2">
+                                <input
+                                  type="checkbox"
+                                  checked={emailRuleRecipientTypes.includes('customer')}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      setEmailRuleRecipientTypes([...emailRuleRecipientTypes, 'customer']);
+                                    } else {
+                                      setEmailRuleRecipientTypes(emailRuleRecipientTypes.filter(r => r !== 'customer'));
+                                    }
+                                  }}
+                                  className="rounded"
+                                />
+                                <span>Customer (Booker)</span>
+                              </label>
+                              <label className="flex items-center gap-2">
+                                <input
+                                  type="checkbox"
+                                  checked={emailRuleRecipientTypes.includes('additional')}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      setEmailRuleRecipientTypes([...emailRuleRecipientTypes, 'additional']);
+                                    } else {
+                                      setEmailRuleRecipientTypes(emailRuleRecipientTypes.filter(r => r !== 'additional'));
+                                    }
+                                  }}
+                                  className="rounded"
+                                />
+                                <span>Additional Emails</span>
+                              </label>
+                            </div>
+
+                            {emailRuleRecipientTypes.includes('additional') && (
+                              <div className="space-y-2">
+                                <Label>Additional Email Addresses</Label>
+                                <Input 
+                                  value={emailRuleAdditionalEmails}
+                                  onChange={(e) => setEmailRuleAdditionalEmails(e.target.value)}
+                                  placeholder="email1@example.com, email2@example.com"
+                                />
+                                <p className="text-xs text-gray-500">Comma-separated list of email addresses</p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 pt-2">
+                          <input
+                            type="checkbox"
+                            checked={emailRuleIsActive}
+                            onChange={(e) => setEmailRuleIsActive(e.target.checked)}
+                            className="rounded"
+                          />
+                          <Label>Rule is active</Label>
+                        </div>
+                      </div>
+                      <DialogFooter>
+                        <Button variant="outline" onClick={() => setShowEmailRuleDialog(false)}>Cancel</Button>
+                        <Button onClick={handleSaveEmailRule}>
+                          {editingEmailRule ? 'Update Rule' : 'Create Rule'}
+                        </Button>
+                      </DialogFooter>
+                    </DialogContent>
+                  </Dialog>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {emailRules.length === 0 ? (
+                  <div className="text-center py-8 text-gray-500">
+                    <Clock className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+                    <p>No email rules created yet</p>
+                    <p className="text-sm">Create rules to automatically send reminder emails</p>
+                  </div>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Name</TableHead>
+                        <TableHead>Trigger</TableHead>
+                        <TableHead>Condition</TableHead>
+                        <TableHead>Template</TableHead>
+                        <TableHead>Recipients</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {emailRules.map((rule) => (
+                        <TableRow key={rule.id}>
+                          <TableCell className="font-medium">{rule.name}</TableCell>
+                          <TableCell>
+                            <div className="text-sm">
+                              {getTriggerTypeLabel(rule.trigger_type)}
+                              {rule.trigger_hours && <span className="text-gray-500 ml-1">({rule.trigger_hours}h)</span>}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            {rule.condition_status ? (
+                              <Badge variant="outline" className="capitalize">{rule.condition_status}</Badge>
+                            ) : (
+                              <span className="text-gray-400">Any</span>
+                            )}
+                          </TableCell>
+                          <TableCell>{rule.email_template_name || `Template #${rule.email_template_id}`}</TableCell>
+                          <TableCell>
+                            <div className="flex gap-1 flex-wrap">
+                              {rule.recipient_types?.map((r: string) => (
+                                <Badge key={r} variant="secondary" className="text-xs capitalize">{r}</Badge>
+                              ))}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge className={rule.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}>
+                              {rule.is_active ? 'Active' : 'Inactive'}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              onClick={() => handleToggleEmailRule(rule.id)}
+                              title={rule.is_active ? 'Disable rule' : 'Enable rule'}
+                            >
+                              {rule.is_active ? (
+                                <ToggleRight className="w-4 h-4 text-green-500" />
+                              ) : (
+                                <ToggleLeft className="w-4 h-4 text-gray-400" />
+                              )}
+                            </Button>
+                            <Button variant="ghost" size="sm" onClick={() => openEditEmailRule(rule)}>
+                              <Edit className="w-4 h-4" />
+                            </Button>
+                            <Button variant="ghost" size="sm" onClick={() => handleDeleteEmailRule(rule.id)}>
                               <Trash2 className="w-4 h-4 text-red-500" />
                             </Button>
                           </TableCell>

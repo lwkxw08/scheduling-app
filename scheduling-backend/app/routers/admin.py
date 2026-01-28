@@ -16,7 +16,8 @@ from app.models.database_models import (
     EmailTemplate, CalendarEventTemplate, TemplateType,
     RosterPattern, RosterPhase, EngineerRosterAssignment,
     ExpediteRequest, ExpediteRequestStatus, EngineerUnavailability, BookingStatusUpdate,
-    FeeProductAssignment, FeeChangeTypeAssignment, FeeApplyMode, BookingFee, BookingFeeStatus
+    FeeProductAssignment, FeeChangeTypeAssignment, FeeApplyMode, BookingFee, BookingFeeStatus,
+    EmailRule, EmailRuleSentLog, EmailRuleTriggerType, EmailRuleRecipientType
 )
 from app.schemas.schemas import (
     ProductCreate, ProductUpdate, ProductResponse, ChangeTypeCreate, ChangeTypeResponse,
@@ -31,7 +32,8 @@ from app.schemas.schemas import (
     RosterPhaseCreate, RosterPhaseResponse, RosterPatternListResponse,
     EngineerRosterAssignmentCreate, EngineerRosterAssignmentResponse,
     ExpediteRequestCreate, ExpediteRequestApprove, ExpediteRequestReject, ExpediteRequestResponse,
-    EngineerUnavailabilityCreate, EngineerUnavailabilityResponse
+    EngineerUnavailabilityCreate, EngineerUnavailabilityResponse,
+    EmailRuleCreate, EmailRuleUpdate, EmailRuleResponse, EmailRuleSentLogResponse
 )
 from app.services.auth import decode_access_token
 
@@ -2314,3 +2316,264 @@ async def get_all_unavailability(
         .order_by(EngineerUnavailability.start_datetime)
     )
     return result.scalars().all()
+
+
+# Email Rules CRUD
+@router.post("/email-rules", response_model=EmailRuleResponse)
+async def create_email_rule(
+    rule_data: EmailRuleCreate,
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """Create a new email rule"""
+    await get_admin_user(authorization, db)
+    
+    # Verify email template exists
+    template_result = await db.execute(
+        select(EmailTemplate).where(EmailTemplate.id == rule_data.email_template_id)
+    )
+    template = template_result.scalar_one_or_none()
+    if not template:
+        raise HTTPException(status_code=404, detail="Email template not found")
+    
+    rule = EmailRule(
+        name=rule_data.name,
+        description=rule_data.description,
+        trigger_type=EmailRuleTriggerType(rule_data.trigger_type.value),
+        trigger_hours=rule_data.trigger_hours,
+        condition_status=BookingStatus(rule_data.condition_status.value) if rule_data.condition_status else None,
+        email_template_id=rule_data.email_template_id,
+        recipient_types=rule_data.recipient_types,
+        additional_emails=rule_data.additional_emails,
+        is_active=rule_data.is_active
+    )
+    db.add(rule)
+    await db.commit()
+    await db.refresh(rule)
+    
+    return EmailRuleResponse(
+        id=rule.id,
+        name=rule.name,
+        description=rule.description,
+        trigger_type=rule.trigger_type.value,
+        trigger_hours=rule.trigger_hours,
+        condition_status=rule.condition_status.value if rule.condition_status else None,
+        email_template_id=rule.email_template_id,
+        email_template_name=template.name,
+        recipient_types=rule.recipient_types,
+        additional_emails=rule.additional_emails,
+        is_active=rule.is_active,
+        created_at=rule.created_at,
+        updated_at=rule.updated_at
+    )
+
+
+@router.get("/email-rules", response_model=List[EmailRuleResponse])
+async def get_email_rules(
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get all email rules"""
+    await get_admin_user(authorization, db)
+    
+    result = await db.execute(
+        select(EmailRule)
+        .options(selectinload(EmailRule.email_template))
+        .order_by(EmailRule.created_at.desc())
+    )
+    rules = result.scalars().all()
+    
+    return [
+        EmailRuleResponse(
+            id=rule.id,
+            name=rule.name,
+            description=rule.description,
+            trigger_type=rule.trigger_type.value,
+            trigger_hours=rule.trigger_hours,
+            condition_status=rule.condition_status.value if rule.condition_status else None,
+            email_template_id=rule.email_template_id,
+            email_template_name=rule.email_template.name if rule.email_template else None,
+            recipient_types=rule.recipient_types,
+            additional_emails=rule.additional_emails,
+            is_active=rule.is_active,
+            created_at=rule.created_at,
+            updated_at=rule.updated_at
+        )
+        for rule in rules
+    ]
+
+
+@router.get("/email-rules/{rule_id}", response_model=EmailRuleResponse)
+async def get_email_rule(
+    rule_id: int,
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get a specific email rule"""
+    await get_admin_user(authorization, db)
+    
+    result = await db.execute(
+        select(EmailRule)
+        .options(selectinload(EmailRule.email_template))
+        .where(EmailRule.id == rule_id)
+    )
+    rule = result.scalar_one_or_none()
+    if not rule:
+        raise HTTPException(status_code=404, detail="Email rule not found")
+    
+    return EmailRuleResponse(
+        id=rule.id,
+        name=rule.name,
+        description=rule.description,
+        trigger_type=rule.trigger_type.value,
+        trigger_hours=rule.trigger_hours,
+        condition_status=rule.condition_status.value if rule.condition_status else None,
+        email_template_id=rule.email_template_id,
+        email_template_name=rule.email_template.name if rule.email_template else None,
+        recipient_types=rule.recipient_types,
+        additional_emails=rule.additional_emails,
+        is_active=rule.is_active,
+        created_at=rule.created_at,
+        updated_at=rule.updated_at
+    )
+
+
+@router.put("/email-rules/{rule_id}", response_model=EmailRuleResponse)
+async def update_email_rule(
+    rule_id: int,
+    rule_data: EmailRuleUpdate,
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """Update an email rule"""
+    await get_admin_user(authorization, db)
+    
+    result = await db.execute(
+        select(EmailRule)
+        .options(selectinload(EmailRule.email_template))
+        .where(EmailRule.id == rule_id)
+    )
+    rule = result.scalar_one_or_none()
+    if not rule:
+        raise HTTPException(status_code=404, detail="Email rule not found")
+    
+    if rule_data.name is not None:
+        rule.name = rule_data.name
+    if rule_data.description is not None:
+        rule.description = rule_data.description
+    if rule_data.trigger_type is not None:
+        rule.trigger_type = EmailRuleTriggerType(rule_data.trigger_type.value)
+    if rule_data.trigger_hours is not None:
+        rule.trigger_hours = rule_data.trigger_hours
+    if rule_data.condition_status is not None:
+        rule.condition_status = BookingStatus(rule_data.condition_status.value)
+    if rule_data.email_template_id is not None:
+        # Verify template exists
+        template_result = await db.execute(
+            select(EmailTemplate).where(EmailTemplate.id == rule_data.email_template_id)
+        )
+        if not template_result.scalar_one_or_none():
+            raise HTTPException(status_code=404, detail="Email template not found")
+        rule.email_template_id = rule_data.email_template_id
+    if rule_data.recipient_types is not None:
+        rule.recipient_types = rule_data.recipient_types
+    if rule_data.additional_emails is not None:
+        rule.additional_emails = rule_data.additional_emails
+    if rule_data.is_active is not None:
+        rule.is_active = rule_data.is_active
+    
+    await db.commit()
+    await db.refresh(rule)
+    
+    # Reload with template
+    result = await db.execute(
+        select(EmailRule)
+        .options(selectinload(EmailRule.email_template))
+        .where(EmailRule.id == rule_id)
+    )
+    rule = result.scalar_one()
+    
+    return EmailRuleResponse(
+        id=rule.id,
+        name=rule.name,
+        description=rule.description,
+        trigger_type=rule.trigger_type.value,
+        trigger_hours=rule.trigger_hours,
+        condition_status=rule.condition_status.value if rule.condition_status else None,
+        email_template_id=rule.email_template_id,
+        email_template_name=rule.email_template.name if rule.email_template else None,
+        recipient_types=rule.recipient_types,
+        additional_emails=rule.additional_emails,
+        is_active=rule.is_active,
+        created_at=rule.created_at,
+        updated_at=rule.updated_at
+    )
+
+
+@router.delete("/email-rules/{rule_id}")
+async def delete_email_rule(
+    rule_id: int,
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """Delete an email rule"""
+    await get_admin_user(authorization, db)
+    
+    result = await db.execute(select(EmailRule).where(EmailRule.id == rule_id))
+    rule = result.scalar_one_or_none()
+    if not rule:
+        raise HTTPException(status_code=404, detail="Email rule not found")
+    
+    await db.delete(rule)
+    await db.commit()
+    return {"message": "Email rule deleted"}
+
+
+@router.post("/email-rules/{rule_id}/toggle")
+async def toggle_email_rule(
+    rule_id: int,
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """Toggle an email rule's active status"""
+    await get_admin_user(authorization, db)
+    
+    result = await db.execute(select(EmailRule).where(EmailRule.id == rule_id))
+    rule = result.scalar_one_or_none()
+    if not rule:
+        raise HTTPException(status_code=404, detail="Email rule not found")
+    
+    rule.is_active = not rule.is_active
+    await db.commit()
+    return {"message": f"Email rule {'activated' if rule.is_active else 'deactivated'}", "is_active": rule.is_active}
+
+
+@router.get("/email-rules/{rule_id}/logs", response_model=List[EmailRuleSentLogResponse])
+async def get_email_rule_logs(
+    rule_id: int,
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get sent email logs for a specific rule"""
+    await get_admin_user(authorization, db)
+    
+    result = await db.execute(
+        select(EmailRuleSentLog)
+        .where(EmailRuleSentLog.rule_id == rule_id)
+        .order_by(EmailRuleSentLog.sent_at.desc())
+        .limit(100)
+    )
+    return result.scalars().all()
+
+
+@router.post("/email-rules/process")
+async def process_email_rules(
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """Manually trigger processing of all active email rules"""
+    await get_admin_user(authorization, db)
+    
+    from app.services.email_rule_processor import process_all_rules
+    results = await process_all_rules(db)
+    return {"message": "Email rules processed", "results": results}

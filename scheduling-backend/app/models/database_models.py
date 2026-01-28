@@ -420,3 +420,59 @@ class ExpediteRequest(Base):
     change_type = relationship("ChangeType")
     assigned_engineer = relationship("Engineer", foreign_keys=[assigned_engineer_id])
     resulting_booking = relationship("Booking", foreign_keys=[resulting_booking_id])
+
+
+class EmailRuleTriggerType(str, enum.Enum):
+    TIME_BEFORE_BOOKING = "time_before_booking"  # X hours before scheduled date
+    TIME_AFTER_BOOKING_CREATED = "time_after_booking_created"  # X hours after booking was created
+    STATUS_IS = "status_is"  # When booking status is a specific value
+
+
+class EmailRuleRecipientType(str, enum.Enum):
+    ENGINEER = "engineer"
+    CUSTOMER = "customer"  # Uses booker email
+    BOOKER = "booker"
+    ADDITIONAL = "additional"  # Uses additional_emails from rule
+
+
+class EmailRule(Base):
+    """Automated email rules for sending reminders and notifications"""
+    __tablename__ = "email_rules"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    
+    # Trigger configuration
+    trigger_type = Column(SQLEnum(EmailRuleTriggerType, values_callable=lambda x: [e.value for e in x]), nullable=False)
+    trigger_hours = Column(Integer, nullable=True)  # Hours before/after for time-based triggers
+    condition_status = Column(SQLEnum(BookingStatus, values_callable=lambda x: [e.value for e in x]), nullable=True)  # Required booking status
+    
+    # Action configuration
+    email_template_id = Column(Integer, ForeignKey("email_templates.id"), nullable=False)
+    recipient_types = Column(JSON, nullable=False)  # List of EmailRuleRecipientType values
+    additional_emails = Column(JSON, nullable=True)  # Additional email addresses
+    
+    # Status
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    email_template = relationship("EmailTemplate")
+    sent_emails = relationship("EmailRuleSentLog", back_populates="rule", cascade="all, delete-orphan")
+
+
+class EmailRuleSentLog(Base):
+    """Tracks which emails have been sent by rules to avoid duplicates"""
+    __tablename__ = "email_rule_sent_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    rule_id = Column(Integer, ForeignKey("email_rules.id"), nullable=False)
+    booking_id = Column(Integer, ForeignKey("bookings.id"), nullable=False)
+    sent_at = Column(DateTime, default=datetime.utcnow)
+    recipient_email = Column(String(255), nullable=False)
+    success = Column(Boolean, default=True)
+    error_message = Column(Text, nullable=True)
+
+    rule = relationship("EmailRule", back_populates="sent_emails")
+    booking = relationship("Booking")

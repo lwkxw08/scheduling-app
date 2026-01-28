@@ -671,3 +671,73 @@ class EngineerDashboardStats(BaseModel):
     completed_bookings: int
     pending_bookings: int
     issues_reported: int
+
+
+# Email Rules
+class EmailRuleTriggerType(str, Enum):
+    TIME_BEFORE_BOOKING = "time_before_booking"
+    TIME_AFTER_BOOKING_CREATED = "time_after_booking_created"
+    STATUS_IS = "status_is"
+
+
+class EmailRuleRecipientType(str, Enum):
+    ENGINEER = "engineer"
+    CUSTOMER = "customer"
+    BOOKER = "booker"
+    ADDITIONAL = "additional"
+
+
+class EmailRuleCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+    trigger_type: EmailRuleTriggerType
+    trigger_hours: Optional[int] = None
+    condition_status: Optional[BookingStatus] = None
+    email_template_id: int
+    recipient_types: List[str]
+    additional_emails: Optional[List[str]] = None
+    is_active: bool = True
+
+
+class EmailRuleUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    trigger_type: Optional[EmailRuleTriggerType] = None
+    trigger_hours: Optional[int] = None
+    condition_status: Optional[BookingStatus] = None
+    email_template_id: Optional[int] = None
+    recipient_types: Optional[List[str]] = None
+    additional_emails: Optional[List[str]] = None
+    is_active: Optional[bool] = None
+
+
+class EmailRuleResponse(BaseModel):
+    id: int
+    name: str
+    description: Optional[str]
+    trigger_type: str
+    trigger_hours: Optional[int]
+    condition_status: Optional[str]
+    email_template_id: int
+    email_template_name: Optional[str] = None
+    recipient_types: List[str]
+    additional_emails: Optional[List[str]]
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class EmailRuleSentLogResponse(BaseModel):
+    id: int
+    rule_id: int
+    booking_id: int
+    sent_at: datetime
+    recipient_email: str
+    success: bool
+    error_message: Optional[str]
+
+    class Config:
+        from_attributes = True
