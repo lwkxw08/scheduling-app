@@ -17,7 +17,8 @@ from app.models.database_models import (
     RosterPattern, RosterPhase, EngineerRosterAssignment,
     ExpediteRequest, ExpediteRequestStatus, EngineerUnavailability, BookingStatusUpdate,
     FeeProductAssignment, FeeChangeTypeAssignment, FeeApplyMode, BookingFee, BookingFeeStatus,
-    EmailRule, EmailRuleSentLog, EmailRuleTriggerType, EmailRuleRecipientType
+    EmailRule, EmailRuleSentLog, EmailRuleTriggerType, EmailRuleRecipientType,
+    BankHoliday
 )
 from app.schemas.schemas import (
     ProductCreate, ProductUpdate, ProductResponse, ChangeTypeCreate, ChangeTypeResponse,
@@ -33,7 +34,8 @@ from app.schemas.schemas import (
     EngineerRosterAssignmentCreate, EngineerRosterAssignmentResponse,
     ExpediteRequestCreate, ExpediteRequestApprove, ExpediteRequestReject, ExpediteRequestResponse,
     EngineerUnavailabilityCreate, EngineerUnavailabilityResponse,
-    EmailRuleCreate, EmailRuleUpdate, EmailRuleResponse, EmailRuleSentLogResponse
+    EmailRuleCreate, EmailRuleUpdate, EmailRuleResponse, EmailRuleSentLogResponse,
+    BankHolidayCreate, BankHolidayResponse
 )
 from app.services.auth import decode_access_token
 
@@ -546,7 +548,12 @@ async def create_fee(
         fee_type=fee_data.fee_type,
         amount=fee_data.amount,
         description=fee_data.description,
-        apply_mode=apply_mode
+        apply_mode=apply_mode,
+        apply_on_weekends=fee_data.apply_on_weekends,
+        apply_on_bank_holidays=fee_data.apply_on_bank_holidays,
+        apply_outside_hours=fee_data.apply_outside_hours,
+        outside_hours_start=fee_data.outside_hours_start,
+        outside_hours_end=fee_data.outside_hours_end
     )
     db.add(fee)
     await db.commit()
@@ -583,7 +590,12 @@ async def create_fee(
         is_active=fee.is_active,
         created_at=fee.created_at,
         product_ids=[a.product_id for a in fee.product_assignments],
-        change_type_ids=[a.change_type_id for a in fee.change_type_assignments]
+        change_type_ids=[a.change_type_id for a in fee.change_type_assignments],
+        apply_on_weekends=fee.apply_on_weekends or False,
+        apply_on_bank_holidays=fee.apply_on_bank_holidays or False,
+        apply_outside_hours=fee.apply_outside_hours or False,
+        outside_hours_start=fee.outside_hours_start,
+        outside_hours_end=fee.outside_hours_end
     )
 
 
@@ -611,7 +623,12 @@ async def get_fees(
             is_active=f.is_active,
             created_at=f.created_at,
             product_ids=[a.product_id for a in f.product_assignments],
-            change_type_ids=[a.change_type_id for a in f.change_type_assignments]
+            change_type_ids=[a.change_type_id for a in f.change_type_assignments],
+            apply_on_weekends=f.apply_on_weekends or False,
+            apply_on_bank_holidays=f.apply_on_bank_holidays or False,
+            apply_outside_hours=f.apply_outside_hours or False,
+            outside_hours_start=f.outside_hours_start,
+            outside_hours_end=f.outside_hours_end
         )
         for f in fees
     ]
@@ -644,6 +661,18 @@ async def update_fee(
         fee.description = fee_data.description
     if fee_data.apply_mode is not None:
         fee.apply_mode = FeeApplyMode.APPROVAL if fee_data.apply_mode == FeeApplyModeSchema.APPROVAL else FeeApplyMode.AUTO
+    
+    # Update fee rule conditions
+    if fee_data.apply_on_weekends is not None:
+        fee.apply_on_weekends = fee_data.apply_on_weekends
+    if fee_data.apply_on_bank_holidays is not None:
+        fee.apply_on_bank_holidays = fee_data.apply_on_bank_holidays
+    if fee_data.apply_outside_hours is not None:
+        fee.apply_outside_hours = fee_data.apply_outside_hours
+    if fee_data.outside_hours_start is not None:
+        fee.outside_hours_start = fee_data.outside_hours_start
+    if fee_data.outside_hours_end is not None:
+        fee.outside_hours_end = fee_data.outside_hours_end
     
     # Update product assignments if provided
     if fee_data.product_ids is not None:
@@ -2628,3 +2657,56 @@ async def permanently_delete_booking(
     await db.commit()
     
     return {"message": f"Booking {booking_id} permanently deleted"}
+
+
+# Bank Holiday Management Endpoints
+@router.get("/bank-holidays", response_model=List[BankHolidayResponse])
+async def get_bank_holidays(
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
+):
+    await get_admin_user(authorization, db)
+    
+    result = await db.execute(
+        select(BankHoliday).order_by(BankHoliday.date)
+    )
+    holidays = result.scalars().all()
+    return [BankHolidayResponse.model_validate(h) for h in holidays]
+
+
+@router.post("/bank-holidays", response_model=BankHolidayResponse)
+async def create_bank_holiday(
+    holiday_data: BankHolidayCreate,
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
+):
+    await get_admin_user(authorization, db)
+    
+    holiday = BankHoliday(
+        name=holiday_data.name,
+        date=holiday_data.date
+    )
+    db.add(holiday)
+    await db.commit()
+    await db.refresh(holiday)
+    
+    return BankHolidayResponse.model_validate(holiday)
+
+
+@router.delete("/bank-holidays/{holiday_id}")
+async def delete_bank_holiday(
+    holiday_id: int,
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
+):
+    await get_admin_user(authorization, db)
+    
+    result = await db.execute(select(BankHoliday).where(BankHoliday.id == holiday_id))
+    holiday = result.scalar_one_or_none()
+    if not holiday:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bank holiday not found")
+    
+    await db.delete(holiday)
+    await db.commit()
+    
+    return {"message": "Bank holiday deleted successfully"}

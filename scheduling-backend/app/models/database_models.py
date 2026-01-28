@@ -200,6 +200,12 @@ class Fee(Base):
     description = Column(Text, nullable=True)
     apply_mode = Column(SQLEnum(FeeApplyMode, values_callable=lambda x: [e.value for e in x]), default=FeeApplyMode.AUTO)  # Auto or requires approval
     is_active = Column(Boolean, default=True)
+    # Fee rule conditions - when should this fee apply
+    apply_on_weekends = Column(Boolean, default=False)  # Apply if booking is on Saturday or Sunday
+    apply_on_bank_holidays = Column(Boolean, default=False)  # Apply if booking is on a bank holiday
+    apply_outside_hours = Column(Boolean, default=False)  # Apply if booking is outside working hours
+    outside_hours_start = Column(String(5), nullable=True)  # e.g., "09:00" - start of working hours
+    outside_hours_end = Column(String(5), nullable=True)  # e.g., "17:00" - end of working hours
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -479,3 +485,13 @@ class EmailRuleSentLog(Base):
 
     rule = relationship("EmailRule", back_populates="sent_emails")
     booking = relationship("Booking")
+
+
+class BankHoliday(Base):
+    """Bank holidays for fee rule conditions"""
+    __tablename__ = "bank_holidays"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255), nullable=False)
+    date = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)

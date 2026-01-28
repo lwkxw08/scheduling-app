@@ -287,6 +287,12 @@ class FeeCreate(BaseModel):
     apply_mode: FeeApplyMode = FeeApplyMode.AUTO
     product_ids: Optional[List[int]] = None  # Products this fee applies to
     change_type_ids: Optional[List[int]] = None  # Change types this fee applies to
+    # Fee rule conditions
+    apply_on_weekends: bool = False
+    apply_on_bank_holidays: bool = False
+    apply_outside_hours: bool = False
+    outside_hours_start: Optional[str] = None  # e.g., "09:00"
+    outside_hours_end: Optional[str] = None  # e.g., "17:00"
 
 
 class FeeUpdate(BaseModel):
@@ -297,6 +303,12 @@ class FeeUpdate(BaseModel):
     apply_mode: Optional[FeeApplyMode] = None
     product_ids: Optional[List[int]] = None
     change_type_ids: Optional[List[int]] = None
+    # Fee rule conditions
+    apply_on_weekends: Optional[bool] = None
+    apply_on_bank_holidays: Optional[bool] = None
+    apply_outside_hours: Optional[bool] = None
+    outside_hours_start: Optional[str] = None
+    outside_hours_end: Optional[str] = None
 
 
 class FeeResponse(BaseModel):
@@ -310,6 +322,12 @@ class FeeResponse(BaseModel):
     created_at: datetime
     product_ids: Optional[List[int]] = None
     change_type_ids: Optional[List[int]] = None
+    # Fee rule conditions
+    apply_on_weekends: bool = False
+    apply_on_bank_holidays: bool = False
+    apply_outside_hours: bool = False
+    outside_hours_start: Optional[str] = None
+    outside_hours_end: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -752,6 +770,21 @@ class EmailRuleSentLogResponse(BaseModel):
     recipient_email: str
     success: bool
     error_message: Optional[str]
+
+    class Config:
+        from_attributes = True
+
+
+class BankHolidayCreate(BaseModel):
+    name: str
+    date: datetime
+
+
+class BankHolidayResponse(BaseModel):
+    id: int
+    name: str
+    date: datetime
+    created_at: datetime
 
     class Config:
         from_attributes = True

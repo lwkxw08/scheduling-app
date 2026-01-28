@@ -121,6 +121,18 @@ export interface Fee {
   created_at: string;
   product_ids: number[] | null;
   change_type_ids: number[] | null;
+  apply_on_weekends: boolean;
+  apply_on_bank_holidays: boolean;
+  apply_outside_hours: boolean;
+  outside_hours_start: string | null;
+  outside_hours_end: string | null;
+}
+
+export interface BankHoliday {
+  id: number;
+  name: string;
+  date: string;
+  created_at: string;
 }
 
 export type BookingFeeStatus = 'pending' | 'approved' | 'waived';

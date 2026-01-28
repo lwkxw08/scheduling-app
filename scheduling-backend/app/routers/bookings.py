@@ -9,7 +9,8 @@ from app.database import get_db
 from app.models.database_models import (
     Booking, BookingStatus, Engineer, User, SystemConfig, Fee, Product, 
     ExpediteRequest, ExpediteRequestStatus, TemplateType,
-    FeeProductAssignment, FeeChangeTypeAssignment, BookingFee, BookingFeeStatus, FeeApplyMode
+    FeeProductAssignment, FeeChangeTypeAssignment, BookingFee, BookingFeeStatus, FeeApplyMode,
+    BankHoliday
 )
 from app.schemas.schemas import BookingCreate, BookingUpdate, BookingResponse, ExpediteRequestCreate, ExpediteRequestResponse
 from app.services.auth import decode_access_token
@@ -80,14 +81,39 @@ async def calculate_fees(
     return expedite_fee, cancellation_fee
 
 
+def is_outside_working_hours(scheduled_time: datetime, start_time: str, end_time: str) -> bool:
+    """Check if the scheduled time is outside the specified working hours"""
+    if not start_time or not end_time:
+        return False
+    
+    try:
+        start_hour, start_min = map(int, start_time.split(':'))
+        end_hour, end_min = map(int, end_time.split(':'))
+        
+        booking_hour = scheduled_time.hour
+        booking_min = scheduled_time.minute
+        
+        # Convert to minutes for easier comparison
+        booking_minutes = booking_hour * 60 + booking_min
+        start_minutes = start_hour * 60 + start_min
+        end_minutes = end_hour * 60 + end_min
+        
+        # Outside hours if before start or after end
+        return booking_minutes < start_minutes or booking_minutes >= end_minutes
+    except (ValueError, AttributeError):
+        return False
+
+
 async def apply_fees_to_booking(
     db: AsyncSession,
     booking_id: int,
     product_id: int,
-    change_type_id: int
+    change_type_id: int,
+    scheduled_date: datetime = None
 ) -> List[BookingFee]:
     """
-    Apply fees to a booking based on product and change type assignments.
+    Apply fees to a booking based on product and change type assignments,
+    as well as time-based conditions (weekends, bank holidays, out-of-hours).
     Returns list of BookingFee objects created.
     """
     applied_fees = []
@@ -102,6 +128,12 @@ async def apply_fees_to_booking(
     )
     fees = result.scalars().all()
     
+    # Get bank holidays for checking
+    bank_holidays = []
+    if scheduled_date:
+        holidays_result = await db.execute(select(BankHoliday))
+        bank_holidays = [h.date.date() for h in holidays_result.scalars().all()]
+    
     for fee in fees:
         should_apply = False
         
@@ -114,6 +146,22 @@ async def apply_fees_to_booking(
         change_type_ids = [a.change_type_id for a in fee.change_type_assignments]
         if change_type_id in change_type_ids:
             should_apply = True
+        
+        # Check time-based conditions (only if scheduled_date is provided)
+        if scheduled_date:
+            # Check weekend condition
+            if fee.apply_on_weekends and scheduled_date.weekday() >= 5:  # Saturday=5, Sunday=6
+                should_apply = True
+            
+            # Check bank holiday condition
+            if fee.apply_on_bank_holidays and scheduled_date.date() in bank_holidays:
+                should_apply = True
+            
+            # Check out-of-hours condition
+            if fee.apply_outside_hours and is_outside_working_hours(
+                scheduled_date, fee.outside_hours_start, fee.outside_hours_end
+            ):
+                should_apply = True
         
         if should_apply:
             # Determine status based on apply_mode
@@ -235,12 +283,13 @@ async def create_booking(
     await db.commit()
     await db.refresh(new_booking)
     
-    # Apply fees based on product and change type assignments
+    # Apply fees based on product, change type, and time-based conditions
     await apply_fees_to_booking(
         db,
         new_booking.id,
         booking_data.product_id,
-        booking_data.change_type_id
+        booking_data.change_type_id,
+        booking_data.scheduled_date
     )
     
     if admin_token and engineer.calendar_email:

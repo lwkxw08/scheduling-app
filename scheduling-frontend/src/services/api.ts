@@ -184,14 +184,40 @@ class ApiService {
     return this.request('/admin/fees');
   }
 
-  async createFee(data: { name: string; fee_type: string; amount: number; description?: string }) {
+  async createFee(data: { 
+    name: string; 
+    fee_type: string; 
+    amount: number; 
+    description?: string;
+    apply_mode?: string;
+    product_ids?: number[];
+    change_type_ids?: number[];
+    apply_on_weekends?: boolean;
+    apply_on_bank_holidays?: boolean;
+    apply_outside_hours?: boolean;
+    outside_hours_start?: string;
+    outside_hours_end?: string;
+  }) {
     return this.request('/admin/fees', {
       method: 'POST',
       body: JSON.stringify(data),
     });
   }
 
-  async updateFee(id: number, data: { name: string; fee_type: string; amount: number; description?: string }) {
+  async updateFee(id: number, data: { 
+    name?: string; 
+    fee_type?: string; 
+    amount?: number; 
+    description?: string;
+    apply_mode?: string;
+    product_ids?: number[];
+    change_type_ids?: number[];
+    apply_on_weekends?: boolean;
+    apply_on_bank_holidays?: boolean;
+    apply_outside_hours?: boolean;
+    outside_hours_start?: string;
+    outside_hours_end?: string;
+  }) {
     return this.request(`/admin/fees/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(data),
@@ -817,6 +843,21 @@ class ApiService {
 
   async permanentlyDeleteBooking(bookingId: number) {
     return this.request<any>(`/admin/bookings/${bookingId}/permanent`, { method: 'DELETE' });
+  }
+
+  async getBankHolidays() {
+    return this.request<any[]>('/admin/bank-holidays');
+  }
+
+  async createBankHoliday(data: { name: string; date: string }) {
+    return this.request<any>('/admin/bank-holidays', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteBankHoliday(id: number) {
+    return this.request<any>(`/admin/bank-holidays/${id}`, { method: 'DELETE' });
   }
 }
 

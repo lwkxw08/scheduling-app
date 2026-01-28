@@ -75,6 +75,15 @@ export default function AdminPage() {
   const [feeApplyMode, setFeeApplyMode] = useState<'auto' | 'approval'>('auto');
   const [feeProductIds, setFeeProductIds] = useState<number[]>([]);
   const [feeChangeTypeIds, setFeeChangeTypeIds] = useState<number[]>([]);
+  const [feeApplyOnWeekends, setFeeApplyOnWeekends] = useState(false);
+  const [feeApplyOnBankHolidays, setFeeApplyOnBankHolidays] = useState(false);
+  const [feeApplyOutsideHours, setFeeApplyOutsideHours] = useState(false);
+  const [feeOutsideHoursStart, setFeeOutsideHoursStart] = useState('09:00');
+  const [feeOutsideHoursEnd, setFeeOutsideHoursEnd] = useState('17:00');
+  const [bankHolidays, setBankHolidays] = useState<any[]>([]);
+  const [showBankHolidayDialog, setShowBankHolidayDialog] = useState(false);
+  const [bankHolidayName, setBankHolidayName] = useState('');
+  const [bankHolidayDate, setBankHolidayDate] = useState('');
   const [pendingFeeApprovals, setPendingFeeApprovals] = useState<any[]>([]);
   const [showWaiveDialog, setShowWaiveDialog] = useState(false);
   const [waivingFeeId, setWaivingFeeId] = useState<number | null>(null);
@@ -195,6 +204,7 @@ export default function AdminPage() {
     }
     loadAllData();
     loadPendingFeeApprovals();
+    loadBankHolidays();
   }, [user, navigate]);
 
   const loadAllData = async () => {
@@ -393,6 +403,11 @@ export default function AdminPage() {
         apply_mode: feeApplyMode,
         product_ids: feeProductIds.length > 0 ? feeProductIds : undefined,
         change_type_ids: feeChangeTypeIds.length > 0 ? feeChangeTypeIds : undefined,
+        apply_on_weekends: feeApplyOnWeekends,
+        apply_on_bank_holidays: feeApplyOnBankHolidays,
+        apply_outside_hours: feeApplyOutsideHours,
+        outside_hours_start: feeApplyOutsideHours ? feeOutsideHoursStart : undefined,
+        outside_hours_end: feeApplyOutsideHours ? feeOutsideHoursEnd : undefined,
       };
       
       if (editingFee) {
@@ -409,9 +424,49 @@ export default function AdminPage() {
       setFeeApplyMode('auto');
       setFeeProductIds([]);
       setFeeChangeTypeIds([]);
+      setFeeApplyOnWeekends(false);
+      setFeeApplyOnBankHolidays(false);
+      setFeeApplyOutsideHours(false);
+      setFeeOutsideHoursStart('09:00');
+      setFeeOutsideHoursEnd('17:00');
       loadAllData();
     } catch (err: any) {
       setError(err.message);
+    }
+  };
+
+  const loadBankHolidays = async () => {
+    try {
+      const data = await api.getBankHolidays();
+      setBankHolidays(data);
+    } catch (err: any) {
+      console.error('Failed to load bank holidays:', err);
+    }
+  };
+
+  const handleSaveBankHoliday = async () => {
+    try {
+      await api.createBankHoliday({
+        name: bankHolidayName,
+        date: bankHolidayDate,
+      });
+      setShowBankHolidayDialog(false);
+      setBankHolidayName('');
+      setBankHolidayDate('');
+      loadBankHolidays();
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
+
+  const handleDeleteBankHoliday = async (id: number) => {
+    if (confirm('Are you sure you want to delete this bank holiday?')) {
+      try {
+        await api.deleteBankHoliday(id);
+        loadBankHolidays();
+      } catch (err: any) {
+        setError(err.message);
+      }
     }
   };
 
@@ -1683,7 +1738,7 @@ export default function AdminPage() {
                 </div>
                 <Dialog open={showFeeDialog} onOpenChange={setShowFeeDialog}>
                   <DialogTrigger asChild>
-                    <Button onClick={() => { setEditingFee(null); setFeeName(''); setFeeType(''); setFeeAmount(''); setFeeDescription(''); setFeeApplyMode('auto'); setFeeProductIds([]); setFeeChangeTypeIds([]); }}>
+                    <Button onClick={() => { setEditingFee(null); setFeeName(''); setFeeType(''); setFeeAmount(''); setFeeDescription(''); setFeeApplyMode('auto'); setFeeProductIds([]); setFeeChangeTypeIds([]); setFeeApplyOnWeekends(false); setFeeApplyOnBankHolidays(false); setFeeApplyOutsideHours(false); setFeeOutsideHoursStart('09:00'); setFeeOutsideHoursEnd('17:00'); }}>
                       <Plus className="w-4 h-4 mr-2" />
                       Add Fee
                     </Button>
@@ -1784,6 +1839,59 @@ export default function AdminPage() {
                       <p className="text-sm text-gray-500">
                         Select products and/or change types this fee should apply to. When a booking is created with a matching product or change type, this fee will be automatically added.
                       </p>
+                      <div className="border-t pt-4 mt-4">
+                        <Label className="text-base font-semibold">Time-Based Fee Rules</Label>
+                        <p className="text-sm text-gray-500 mb-3">Configure when this fee should automatically apply based on booking time.</p>
+                        <div className="space-y-3">
+                          <div className="flex items-center space-x-2">
+                            <Checkbox
+                              id="fee-weekends"
+                              checked={feeApplyOnWeekends}
+                              onCheckedChange={(checked) => setFeeApplyOnWeekends(checked as boolean)}
+                            />
+                            <label htmlFor="fee-weekends" className="text-sm">Apply on Weekends (Saturday & Sunday)</label>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <Checkbox
+                              id="fee-bank-holidays"
+                              checked={feeApplyOnBankHolidays}
+                              onCheckedChange={(checked) => setFeeApplyOnBankHolidays(checked as boolean)}
+                            />
+                            <label htmlFor="fee-bank-holidays" className="text-sm">Apply on Bank Holidays</label>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <Checkbox
+                              id="fee-outside-hours"
+                              checked={feeApplyOutsideHours}
+                              onCheckedChange={(checked) => setFeeApplyOutsideHours(checked as boolean)}
+                            />
+                            <label htmlFor="fee-outside-hours" className="text-sm">Apply Outside Working Hours</label>
+                          </div>
+                          {feeApplyOutsideHours && (
+                            <div className="ml-6 grid grid-cols-2 gap-4">
+                              <div className="space-y-2">
+                                <Label>Working Hours Start</Label>
+                                <Input
+                                  type="time"
+                                  value={feeOutsideHoursStart}
+                                  onChange={(e) => setFeeOutsideHoursStart(e.target.value)}
+                                />
+                              </div>
+                              <div className="space-y-2">
+                                <Label>Working Hours End</Label>
+                                <Input
+                                  type="time"
+                                  value={feeOutsideHoursEnd}
+                                  onChange={(e) => setFeeOutsideHoursEnd(e.target.value)}
+                                />
+                              </div>
+                              <p className="col-span-2 text-xs text-gray-500">
+                                Fee will apply to bookings scheduled before {feeOutsideHoursStart} or after {feeOutsideHoursEnd}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     </div>
                     <DialogFooter>
                       <Button variant="outline" onClick={() => setShowFeeDialog(false)}>Cancel</Button>
@@ -1851,6 +1959,11 @@ export default function AdminPage() {
                               setFeeApplyMode(fee.apply_mode || 'auto');
                               setFeeProductIds(fee.product_ids || []);
                               setFeeChangeTypeIds(fee.change_type_ids || []);
+                              setFeeApplyOnWeekends(fee.apply_on_weekends || false);
+                              setFeeApplyOnBankHolidays(fee.apply_on_bank_holidays || false);
+                              setFeeApplyOutsideHours(fee.apply_outside_hours || false);
+                              setFeeOutsideHoursStart(fee.outside_hours_start || '09:00');
+                              setFeeOutsideHoursEnd(fee.outside_hours_end || '17:00');
                               setShowFeeDialog(true);
                             }}
                           >
@@ -1864,6 +1977,79 @@ export default function AdminPage() {
                     ))}
                   </TableBody>
                 </Table>
+              </CardContent>
+            </Card>
+
+            {/* Bank Holidays Management Section */}
+            <Card className="mt-6">
+              <CardHeader className="flex flex-row items-center justify-between">
+                <div>
+                  <CardTitle>Bank Holidays</CardTitle>
+                  <CardDescription>Manage bank holidays for fee rule conditions</CardDescription>
+                </div>
+                <Dialog open={showBankHolidayDialog} onOpenChange={setShowBankHolidayDialog}>
+                  <DialogTrigger asChild>
+                    <Button onClick={() => { setBankHolidayName(''); setBankHolidayDate(''); }}>
+                      <Plus className="w-4 h-4 mr-2" />
+                      Add Bank Holiday
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Add Bank Holiday</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <Label>Holiday Name</Label>
+                        <Input 
+                          value={bankHolidayName} 
+                          onChange={(e) => setBankHolidayName(e.target.value)} 
+                          placeholder="e.g., Christmas Day"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Date</Label>
+                        <Input 
+                          type="date" 
+                          value={bankHolidayDate} 
+                          onChange={(e) => setBankHolidayDate(e.target.value)} 
+                        />
+                      </div>
+                    </div>
+                    <DialogFooter>
+                      <Button variant="outline" onClick={() => setShowBankHolidayDialog(false)}>Cancel</Button>
+                      <Button onClick={handleSaveBankHoliday}>Save</Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+              </CardHeader>
+              <CardContent>
+                {bankHolidays.length === 0 ? (
+                  <p className="text-sm text-gray-500 text-center py-4">No bank holidays configured. Add bank holidays to enable the "Apply on Bank Holidays" fee rule.</p>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Name</TableHead>
+                        <TableHead>Date</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {bankHolidays.map((holiday) => (
+                        <TableRow key={holiday.id}>
+                          <TableCell className="font-medium">{holiday.name}</TableCell>
+                          <TableCell>{new Date(holiday.date).toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</TableCell>
+                          <TableCell className="text-right">
+                            <Button variant="ghost" size="sm" onClick={() => handleDeleteBankHoliday(holiday.id)}>
+                              <Trash2 className="w-4 h-4 text-red-500" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
               </CardContent>
             </Card>
 
