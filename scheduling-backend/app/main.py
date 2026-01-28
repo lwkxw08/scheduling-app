@@ -5,13 +5,18 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from app.database import init_db
+from app.database import init_db, get_db
 from app.routers import auth, bookings, availability, admin, engineer
+from app.services.email_rule_processor import start_rule_processor, stop_rule_processor
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
+    # Start the email rule processor (runs every hour)
+    start_rule_processor(get_db)
     yield
+    # Stop the email rule processor on shutdown
+    stop_rule_processor()
 
 app = FastAPI(
     title="Scheduling Application",

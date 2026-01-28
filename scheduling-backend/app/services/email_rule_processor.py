@@ -335,8 +335,8 @@ async def rule_processor_loop(get_db_session):
         except Exception as e:
             print(f"Error in rule processor loop: {str(e)}")
         
-        # Wait 15 minutes before next check
-        await asyncio.sleep(900)
+        # Wait 1 hour before next check
+        await asyncio.sleep(3600)
 
 
 def start_rule_processor(get_db_session):
