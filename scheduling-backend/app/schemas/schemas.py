@@ -498,6 +498,9 @@ class TemplatePlaceholders(BaseModel):
         "{{booker_email}}",
         "{{booking_status}}",
         "{{notes}}",
+        "{{booking_notes}}",
+        "{{engineer_notes}}",
+        "{{issue_description}}",
         "{{cancellation_fee}}",
         "{{expedite_fee}}",
     ]
@@ -718,6 +721,8 @@ class EmailRuleTriggerType(str, Enum):
     TIME_BEFORE_BOOKING = "time_before_booking"
     TIME_AFTER_BOOKING_CREATED = "time_after_booking_created"
     STATUS_IS = "status_is"
+    NOTE_ADDED = "note_added"
+    ISSUE_REPORTED = "issue_reported"
 
 
 class EmailRuleRecipientType(str, Enum):

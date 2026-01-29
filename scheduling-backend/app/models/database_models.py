@@ -440,6 +440,8 @@ class EmailRuleTriggerType(str, enum.Enum):
     TIME_BEFORE_BOOKING = "time_before_booking"  # X hours before scheduled date
     TIME_AFTER_BOOKING_CREATED = "time_after_booking_created"  # X hours after booking was created
     STATUS_IS = "status_is"  # When booking status is a specific value
+    NOTE_ADDED = "note_added"  # When a note is added to the booking (booking notes or engineer notes)
+    ISSUE_REPORTED = "issue_reported"  # When an engineer reports an issue on the booking
 
 
 class EmailRuleRecipientType(str, enum.Enum):

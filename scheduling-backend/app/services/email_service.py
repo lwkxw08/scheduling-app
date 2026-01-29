@@ -68,6 +68,9 @@ def replace_placeholders(text: str, booking_data: dict) -> str:
         '{{booker_email}}': str(booking_data.get('booker_email', '')),
         '{{booking_status}}': str(booking_data.get('booking_status', '')),
         '{{notes}}': str(booking_data.get('notes', '') or ''),
+        '{{booking_notes}}': str(booking_data.get('booking_notes', '') or ''),
+        '{{engineer_notes}}': str(booking_data.get('engineer_notes', '') or ''),
+        '{{issue_description}}': str(booking_data.get('issue_description', '') or ''),
         '{{cancellation_fee}}': str(booking_data.get('cancellation_fee', '0')),
         '{{expedite_fee}}': str(booking_data.get('expedite_fee', '0')),
     }
@@ -103,6 +106,9 @@ def build_booking_data(booking: Booking, booker_name: str, booker_email: str) ->
         'booker_email': booker_email,
         'booking_status': booking.status.value if booking.status else '',
         'notes': booking.notes or '',
+        'booking_notes': booking.notes or '',
+        'engineer_notes': getattr(booking, 'engineer_notes', '') or '',
+        'issue_description': getattr(booking, 'issue_description', '') or '',
         'cancellation_fee': booking.cancellation_fee or 0,
         'expedite_fee': booking.expedite_fee or 0,
     }

@@ -1061,6 +1061,8 @@ export default function AdminPage() {
       case 'time_before_booking': return 'Time Before Booking';
       case 'time_after_booking_created': return 'Time After Booking Created';
       case 'status_is': return 'When Status Is';
+      case 'note_added': return 'When Note Added';
+      case 'issue_reported': return 'When Issue Reported';
       default: return type;
     }
   };
@@ -3039,11 +3041,13 @@ export default function AdminPage() {
                                 <SelectTrigger>
                                   <SelectValue />
                                 </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="time_before_booking">Time Before Booking</SelectItem>
-                                  <SelectItem value="time_after_booking_created">Time After Booking Created</SelectItem>
-                                  <SelectItem value="status_is">When Status Is</SelectItem>
-                                </SelectContent>
+                                                                <SelectContent>
+                                                                  <SelectItem value="time_before_booking">Time Before Booking</SelectItem>
+                                                                  <SelectItem value="time_after_booking_created">Time After Booking Created</SelectItem>
+                                                                  <SelectItem value="status_is">When Status Is</SelectItem>
+                                                                  <SelectItem value="note_added">When Note Added</SelectItem>
+                                                                  <SelectItem value="issue_reported">When Issue Reported</SelectItem>
+                                                                </SelectContent>
                               </Select>
                             </div>
 
