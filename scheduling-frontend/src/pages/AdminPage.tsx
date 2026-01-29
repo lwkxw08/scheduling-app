@@ -1425,21 +1425,21 @@ export default function AdminPage() {
         )}
 
         <Tabs value={activeTab} onValueChange={(value) => { setActiveTab(value); if (value === 'issues') loadOpenIssues(); }} className="space-y-6">
-                    <TabsList className="grid w-full grid-cols-13">
-                      <TabsTrigger value="products">Products</TabsTrigger>
-                      <TabsTrigger value="change-types">Change Types</TabsTrigger>
-                      <TabsTrigger value="engineers">Engineers</TabsTrigger>
-                      <TabsTrigger value="roster-patterns">Rosters</TabsTrigger>
-                      <TabsTrigger value="fields">Custom Fields</TabsTrigger>
-                      <TabsTrigger value="fees">Fees</TabsTrigger>
-                      <TabsTrigger value="expedite-requests">Expedite</TabsTrigger>
-                      <TabsTrigger value="issues">Issues</TabsTrigger>
-                      <TabsTrigger value="reports">Reports</TabsTrigger>
-                      <TabsTrigger value="email-templates">Email</TabsTrigger>
-                      <TabsTrigger value="email-rules">Rules</TabsTrigger>
-                      <TabsTrigger value="calendar-templates">Calendar</TabsTrigger>
-                      <TabsTrigger value="config">Settings</TabsTrigger>
-                    </TabsList>
+                                        <TabsList className="flex flex-wrap h-auto gap-1 p-1">
+                                          <TabsTrigger value="products">Products</TabsTrigger>
+                                          <TabsTrigger value="change-types">Change Types</TabsTrigger>
+                                          <TabsTrigger value="engineers">Engineers</TabsTrigger>
+                                          <TabsTrigger value="roster-patterns">Rosters</TabsTrigger>
+                                          <TabsTrigger value="fields">Fields</TabsTrigger>
+                                          <TabsTrigger value="fees">Fees</TabsTrigger>
+                                          <TabsTrigger value="expedite-requests">Expedite</TabsTrigger>
+                                          <TabsTrigger value="issues">Issues</TabsTrigger>
+                                          <TabsTrigger value="reports">Reports</TabsTrigger>
+                                          <TabsTrigger value="email-templates">Email</TabsTrigger>
+                                          <TabsTrigger value="email-rules">Rules</TabsTrigger>
+                                          <TabsTrigger value="calendar-templates">Calendar</TabsTrigger>
+                                          <TabsTrigger value="config">Settings</TabsTrigger>
+                                        </TabsList>
 
           <TabsContent value="products">
             <Card>
