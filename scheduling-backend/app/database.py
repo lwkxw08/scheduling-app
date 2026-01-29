@@ -54,6 +54,7 @@ async def run_migrations(conn):
         ("change_types", "minimum_notice_hours", "INTEGER DEFAULT 0"),
         ("change_types", "cancellation_notice_hours", "INTEGER"),
         ("change_types", "amendment_notice_hours", "INTEGER"),
+        ("users", "last_login_at", "DATETIME"),
     ]
     
     for table_name, column_name, column_def in migrations:
