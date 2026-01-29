@@ -295,17 +295,17 @@ async def update_booking_status(
     )
     db.add(status_update_record)
     
-        # Update the booking status
-        booking.status = status_update.new_status
-        booking.updated_at = datetime.utcnow()
+    # Update the booking status
+    booking.status = status_update.new_status
+    booking.updated_at = datetime.utcnow()
     
-        # If an issue is being reported, update the booking's issue fields
-        if status_update.issue_reported and status_update.issue_description:
-            booking.issue_description = status_update.issue_description
-            booking.issue_reported_at = datetime.utcnow()
-            booking.issue_resolved = False
+    # If an issue is being reported, update the booking's issue fields
+    if status_update.issue_reported and status_update.issue_description:
+        booking.issue_description = status_update.issue_description
+        booking.issue_reported_at = datetime.utcnow()
+        booking.issue_resolved = False
     
-        await db.commit()
+    await db.commit()
     await db.refresh(status_update_record)
     
     return {
