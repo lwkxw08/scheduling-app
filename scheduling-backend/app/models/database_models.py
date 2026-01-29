@@ -165,6 +165,10 @@ class Booking(Base):
     customer_attachment_url = Column(String(1000), nullable=True)  # Attachment URL for customer confirmation email
     cancellation_fee = Column(Float, default=0.0)
     expedite_fee = Column(Float, default=0.0)
+    engineer_notes = Column(Text, nullable=True)  # Notes from engineer about the booking
+    issue_description = Column(Text, nullable=True)  # Issue reported by engineer
+    issue_reported_at = Column(DateTime, nullable=True)  # When the issue was reported
+    issue_resolved = Column(Boolean, default=False)  # Whether the issue has been resolved
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

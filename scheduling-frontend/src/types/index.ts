@@ -83,6 +83,10 @@ export interface Booking {
   customer_attachment_url: string | null;
   cancellation_fee: number;
   expedite_fee: number;
+  engineer_notes: string | null;
+  issue_description: string | null;
+  issue_reported_at: string | null;
+  issue_resolved: boolean;
   created_at: string;
   updated_at: string;
   engineer?: Engineer;

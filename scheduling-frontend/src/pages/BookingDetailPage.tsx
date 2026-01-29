@@ -383,6 +383,100 @@ export default function BookingDetailPage() {
             </CardContent>
           </Card>
 
+          {/* Additional Information Section */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Additional Information</CardTitle>
+              <CardDescription>
+                Additional details and information about this booking
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <div>
+                  <Label className="text-gray-500">Custom Fields</Label>
+                  {booking.custom_fields_data && Object.keys(booking.custom_fields_data).length > 0 ? (
+                    <div className="mt-2 space-y-2">
+                      {Object.entries(booking.custom_fields_data).map(([key, value]) => (
+                        <div key={key} className="flex justify-between text-sm">
+                          <span className="text-gray-600">{key}:</span>
+                          <span className="font-medium">{String(value)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="mt-1 text-gray-400 text-sm">No additional information provided</p>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Booking Notes Section */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Booking Notes</CardTitle>
+              <CardDescription>
+                Notes and comments about this booking
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {booking.notes ? (
+                <p className="text-gray-700 whitespace-pre-wrap">{booking.notes}</p>
+              ) : (
+                <p className="text-gray-400 text-sm">No booking notes</p>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Engineer Notes Section */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Engineer Notes</CardTitle>
+              <CardDescription>
+                Notes from the assigned engineer
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {booking.engineer_notes ? (
+                <p className="text-gray-700 whitespace-pre-wrap">{booking.engineer_notes}</p>
+              ) : (
+                <p className="text-gray-400 text-sm">No engineer notes</p>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Engineer Issue Description Section */}
+          <Card className={booking.issue_description && !booking.issue_resolved ? 'border-amber-300 bg-amber-50' : ''}>
+            <CardHeader>
+              <CardTitle className={booking.issue_description && !booking.issue_resolved ? 'text-amber-700' : ''}>
+                Engineer Issue Report
+              </CardTitle>
+              <CardDescription>
+                Issues reported by the engineer regarding this booking
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {booking.issue_description ? (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <Badge variant={booking.issue_resolved ? 'secondary' : 'destructive'}>
+                      {booking.issue_resolved ? 'Resolved' : 'Open'}
+                    </Badge>
+                    {booking.issue_reported_at && (
+                      <span className="text-sm text-gray-500">
+                        Reported: {new Date(booking.issue_reported_at).toLocaleString()}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-gray-700 whitespace-pre-wrap">{booking.issue_description}</p>
+                </div>
+              ) : (
+                <p className="text-gray-400 text-sm">No issues reported</p>
+              )}
+            </CardContent>
+          </Card>
+
           {(booking.cancellation_fee > 0 || booking.expedite_fee > 0) && (
             <Card>
               <CardHeader>

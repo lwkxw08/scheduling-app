@@ -497,6 +497,21 @@ async def update_booking(
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Engineer not found")
         booking.engineer_id = update_data.engineer_id
     
+    # Handle engineer notes
+    if update_data.engineer_notes is not None:
+        booking.engineer_notes = update_data.engineer_notes
+    
+    # Handle issue description - set issue_reported_at when first reported
+    if update_data.issue_description is not None:
+        if update_data.issue_description and not booking.issue_description:
+            # First time reporting an issue
+            booking.issue_reported_at = datetime.utcnow()
+        booking.issue_description = update_data.issue_description
+    
+    # Handle issue resolved status
+    if update_data.issue_resolved is not None:
+        booking.issue_resolved = update_data.issue_resolved
+    
     admin_token = await get_admin_token(db)
     if admin_token and booking.outlook_event_id and booking.engineer.calendar_email:
         try:

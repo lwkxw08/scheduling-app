@@ -868,6 +868,22 @@ class ApiService {
   async getUserActivityReport() {
     return this.request<any[]>('/admin/reports/user-activity');
   }
+
+  async getOpenIssues(includeResolved: boolean = false) {
+    return this.request<any[]>(`/admin/issues?include_resolved=${includeResolved}`);
+  }
+
+  async getOpenIssuesCount() {
+    return this.request<{ count: number }>('/admin/issues/count');
+  }
+
+  async resolveIssue(bookingId: number) {
+    return this.request<any>(`/admin/issues/${bookingId}/resolve`, { method: 'PATCH' });
+  }
+
+  async reopenIssue(bookingId: number) {
+    return this.request<any>(`/admin/issues/${bookingId}/reopen`, { method: 'PATCH' });
+  }
 }
 
 export const api = new ApiService();

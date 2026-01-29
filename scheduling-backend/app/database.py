@@ -55,6 +55,10 @@ async def run_migrations(conn):
         ("change_types", "cancellation_notice_hours", "INTEGER"),
         ("change_types", "amendment_notice_hours", "INTEGER"),
         ("users", "last_login_at", "DATETIME"),
+        ("bookings", "engineer_notes", "TEXT"),
+        ("bookings", "issue_description", "TEXT"),
+        ("bookings", "issue_reported_at", "DATETIME"),
+        ("bookings", "issue_resolved", "BOOLEAN DEFAULT 0"),
     ]
     
     for table_name, column_name, column_def in migrations:

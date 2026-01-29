@@ -2798,3 +2798,103 @@ async def delete_bank_holiday(
     await db.commit()
     
     return {"message": "Bank holiday deleted successfully"}
+
+
+# ==================== ISSUES REPORTED ENDPOINTS ====================
+
+@router.get("/issues")
+async def get_open_issues(
+    include_resolved: bool = False,
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get all bookings with reported issues"""
+    await get_admin_user(authorization, db)
+    
+    query = select(Booking).options(
+        selectinload(Booking.engineer).selectinload(Engineer.user),
+        selectinload(Booking.product),
+        selectinload(Booking.change_type),
+        selectinload(Booking.booker)
+    ).where(Booking.issue_description.isnot(None))
+    
+    if not include_resolved:
+        query = query.where(Booking.issue_resolved == False)
+    
+    query = query.order_by(Booking.issue_reported_at.desc())
+    result = await db.execute(query)
+    bookings = result.scalars().all()
+    
+    return [{
+        "id": b.id,
+        "order_reference": b.order_reference,
+        "customer_name": b.customer_name,
+        "scheduled_date": b.scheduled_date.isoformat() if b.scheduled_date else None,
+        "status": b.status.value if hasattr(b.status, 'value') else b.status,
+        "product_name": b.product.name if b.product else None,
+        "engineer_name": b.engineer.user.full_name if b.engineer and b.engineer.user else None,
+        "issue_description": b.issue_description,
+        "issue_reported_at": b.issue_reported_at.isoformat() if b.issue_reported_at else None,
+        "issue_resolved": b.issue_resolved,
+        "engineer_notes": b.engineer_notes,
+    } for b in bookings]
+
+
+@router.get("/issues/count")
+async def get_open_issues_count(
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get count of open issues"""
+    await get_admin_user(authorization, db)
+    
+    from sqlalchemy import func
+    result = await db.execute(
+        select(func.count(Booking.id)).where(
+            Booking.issue_description.isnot(None),
+            Booking.issue_resolved == False
+        )
+    )
+    count = result.scalar()
+    
+    return {"count": count}
+
+
+@router.patch("/issues/{booking_id}/resolve")
+async def resolve_issue(
+    booking_id: int,
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """Mark an issue as resolved"""
+    await get_admin_user(authorization, db)
+    
+    result = await db.execute(select(Booking).where(Booking.id == booking_id))
+    booking = result.scalar_one_or_none()
+    if not booking:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
+    
+    booking.issue_resolved = True
+    await db.commit()
+    
+    return {"message": "Issue marked as resolved"}
+
+
+@router.patch("/issues/{booking_id}/reopen")
+async def reopen_issue(
+    booking_id: int,
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """Reopen a resolved issue"""
+    await get_admin_user(authorization, db)
+    
+    result = await db.execute(select(Booking).where(Booking.id == booking_id))
+    booking = result.scalar_one_or_none()
+    if not booking:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
+    
+    booking.issue_resolved = False
+    await db.commit()
+    
+    return {"message": "Issue reopened"}

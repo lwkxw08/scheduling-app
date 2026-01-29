@@ -220,6 +220,9 @@ class BookingUpdate(BaseModel):
     engineer_attachment_url: Optional[str] = None
     customer_attachment_url: Optional[str] = None
     engineer_id: Optional[int] = None
+    engineer_notes: Optional[str] = None
+    issue_description: Optional[str] = None
+    issue_resolved: Optional[bool] = None
 
 
 class BookingResponse(BaseModel):
@@ -240,6 +243,10 @@ class BookingResponse(BaseModel):
     customer_attachment_url: Optional[str]
     cancellation_fee: float
     expedite_fee: float
+    engineer_notes: Optional[str] = None
+    issue_description: Optional[str] = None
+    issue_reported_at: Optional[datetime] = None
+    issue_resolved: bool = False
     created_at: datetime
     updated_at: datetime
     engineer: Optional[EngineerResponse] = None

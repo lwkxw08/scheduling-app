@@ -203,6 +203,12 @@ export default function AdminPage() {
   const [emailRuleIsActive, setEmailRuleIsActive] = useState(true);
   const [isProcessingRules, setIsProcessingRules] = useState(false);
 
+  // Issues Reported state
+  const [openIssues, setOpenIssues] = useState<any[]>([]);
+  const [openIssuesCount, setOpenIssuesCount] = useState(0);
+  const [showResolvedIssues, setShowResolvedIssues] = useState(false);
+  const [isLoadingIssues, setIsLoadingIssues] = useState(false);
+
   useEffect(() => {
     if (user?.role !== 'admin') {
       navigate('/dashboard');
@@ -211,7 +217,49 @@ export default function AdminPage() {
     loadAllData();
     loadPendingFeeApprovals();
     loadBankHolidays();
+    loadOpenIssuesCount();
   }, [user, navigate]);
+
+  const loadOpenIssuesCount = async () => {
+    try {
+      const data = await api.getOpenIssuesCount();
+      setOpenIssuesCount(data.count);
+    } catch (err) {
+      console.error('Failed to load open issues count:', err);
+    }
+  };
+
+  const loadOpenIssues = async () => {
+    setIsLoadingIssues(true);
+    try {
+      const data = await api.getOpenIssues(showResolvedIssues);
+      setOpenIssues(data);
+    } catch (err) {
+      console.error('Failed to load open issues:', err);
+    } finally {
+      setIsLoadingIssues(false);
+    }
+  };
+
+  const handleResolveIssue = async (bookingId: number) => {
+    try {
+      await api.resolveIssue(bookingId);
+      loadOpenIssues();
+      loadOpenIssuesCount();
+    } catch (err) {
+      console.error('Failed to resolve issue:', err);
+    }
+  };
+
+  const handleReopenIssue = async (bookingId: number) => {
+    try {
+      await api.reopenIssue(bookingId);
+      loadOpenIssues();
+      loadOpenIssuesCount();
+    } catch (err) {
+      console.error('Failed to reopen issue:', err);
+    }
+  };
 
   const loadAllData = async () => {
     setIsLoading(true);
@@ -1359,11 +1407,25 @@ export default function AdminPage() {
                 </div>
               </CardContent>
             </Card>
+            <Card 
+              className="cursor-pointer hover:shadow-md transition-shadow border-red-200 bg-red-50"
+              onClick={() => { setActiveTab('issues'); loadOpenIssues(); }}
+            >
+              <CardContent className="pt-6">
+                <div className="flex items-center">
+                  <AlertCircle className="w-8 h-8 text-red-600 mr-3" />
+                  <div>
+                    <p className="text-2xl font-bold">{openIssuesCount}</p>
+                    <p className="text-sm text-gray-500">Issues Reported</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
           </div>
         )}
 
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-                    <TabsList className="grid w-full grid-cols-12">
+        <Tabs value={activeTab} onValueChange={(value) => { setActiveTab(value); if (value === 'issues') loadOpenIssues(); }} className="space-y-6">
+                    <TabsList className="grid w-full grid-cols-13">
                       <TabsTrigger value="products">Products</TabsTrigger>
                       <TabsTrigger value="change-types">Change Types</TabsTrigger>
                       <TabsTrigger value="engineers">Engineers</TabsTrigger>
@@ -1371,6 +1433,7 @@ export default function AdminPage() {
                       <TabsTrigger value="fields">Custom Fields</TabsTrigger>
                       <TabsTrigger value="fees">Fees</TabsTrigger>
                       <TabsTrigger value="expedite-requests">Expedite</TabsTrigger>
+                      <TabsTrigger value="issues">Issues</TabsTrigger>
                       <TabsTrigger value="reports">Reports</TabsTrigger>
                       <TabsTrigger value="email-templates">Email</TabsTrigger>
                       <TabsTrigger value="email-rules">Rules</TabsTrigger>
@@ -2215,6 +2278,105 @@ export default function AdminPage() {
                 </DialogFooter>
               </DialogContent>
             </Dialog>
+          </TabsContent>
+
+          <TabsContent value="issues">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between">
+                <div>
+                  <CardTitle>Issues Reported</CardTitle>
+                  <CardDescription>View and manage issues reported by engineers on bookings</CardDescription>
+                </div>
+                <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-2">
+                    <Checkbox 
+                      id="showResolved" 
+                      checked={showResolvedIssues} 
+                      onCheckedChange={(checked) => {
+                        setShowResolvedIssues(checked as boolean);
+                        setTimeout(() => loadOpenIssues(), 100);
+                      }}
+                    />
+                    <Label htmlFor="showResolved" className="text-sm">Show resolved issues</Label>
+                  </div>
+                  <Button variant="outline" onClick={loadOpenIssues} disabled={isLoadingIssues}>
+                    {isLoadingIssues ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Refresh'}
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {isLoadingIssues ? (
+                  <div className="flex justify-center py-8">
+                    <Loader2 className="w-8 h-8 animate-spin text-gray-400" />
+                  </div>
+                ) : openIssues.length === 0 ? (
+                  <p className="text-center text-gray-500 py-8">No issues found</p>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Order Ref</TableHead>
+                        <TableHead>Customer</TableHead>
+                        <TableHead>Product</TableHead>
+                        <TableHead>Engineer</TableHead>
+                        <TableHead>Issue Description</TableHead>
+                        <TableHead>Reported</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {openIssues.map((issue) => (
+                        <TableRow key={issue.id}>
+                          <TableCell className="font-medium">
+                            <Button 
+                              variant="link" 
+                              className="p-0 h-auto" 
+                              onClick={() => navigate(`/bookings/${issue.id}`)}
+                            >
+                              {issue.order_reference}
+                            </Button>
+                          </TableCell>
+                          <TableCell>{issue.customer_name}</TableCell>
+                          <TableCell>{issue.product_name || '-'}</TableCell>
+                          <TableCell>{issue.engineer_name || '-'}</TableCell>
+                          <TableCell className="max-w-xs truncate" title={issue.issue_description}>
+                            {issue.issue_description}
+                          </TableCell>
+                          <TableCell>
+                            {issue.issue_reported_at ? new Date(issue.issue_reported_at).toLocaleDateString() : '-'}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant={issue.issue_resolved ? 'secondary' : 'destructive'}>
+                              {issue.issue_resolved ? 'Resolved' : 'Open'}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {issue.issue_resolved ? (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleReopenIssue(issue.id)}
+                              >
+                                Reopen
+                              </Button>
+                            ) : (
+                              <Button
+                                variant="default"
+                                size="sm"
+                                onClick={() => handleResolveIssue(issue.id)}
+                              >
+                                Mark Resolved
+                              </Button>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
           </TabsContent>
 
           <TabsContent value="reports">
