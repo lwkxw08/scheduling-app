@@ -39,6 +39,7 @@ class User(Base):
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    last_login_at = Column(DateTime, nullable=True)
 
     bookings = relationship("Booking", back_populates="booker", foreign_keys="Booking.booker_id")
     engineer_profile = relationship("Engineer", back_populates="user", uselist=False)

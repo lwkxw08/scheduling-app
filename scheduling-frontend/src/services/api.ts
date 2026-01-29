@@ -860,6 +860,14 @@ class ApiService {
   async deleteBankHoliday(id: number) {
     return this.request<any>(`/admin/bank-holidays/${id}`, { method: 'DELETE' });
   }
+
+  async deleteUser(userId: number) {
+    return this.request<any>(`/admin/users/${userId}`, { method: 'DELETE' });
+  }
+
+  async getUserActivityReport() {
+    return this.request<any[]>('/admin/reports/user-activity');
+  }
 }
 
 export const api = new ApiService();

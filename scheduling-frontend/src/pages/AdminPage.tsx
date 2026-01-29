@@ -546,6 +546,18 @@ export default function AdminPage() {
     }
   };
 
+  const handleDeleteUser = async (userId: number, userEmail: string) => {
+    if (!confirm(`Are you sure you want to permanently delete the user "${userEmail}"? This action cannot be undone.`)) {
+      return;
+    }
+    try {
+      await api.deleteUser(userId);
+      loadAllData();
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
+
   const handleSaveSharepointConfig = async () => {
     setIsSavingSharepoint(true);
     setSharepointStatus('');
@@ -1103,6 +1115,9 @@ export default function AdminPage() {
           setRevenueSummary(revenue);
           data = [];
           break;
+        case 'user-activity':
+          data = await api.getUserActivityReport() as any[];
+          break;
       }
       
       setReportData(data);
@@ -1199,6 +1214,19 @@ export default function AdminPage() {
             });
           }
         }
+        break;
+      case 'user-activity':
+        sheetName = 'User Activity';
+        exportData = reportData.map(u => ({
+          'Email': u.email,
+          'Full Name': u.full_name,
+          'Role': u.role,
+          'Is Engineer': u.is_engineer ? 'Yes' : 'No',
+          'Status': u.is_active ? 'Active' : 'Inactive',
+          'Created At': u.created_at,
+          'Last Login': u.last_login_at || 'Never',
+          'Days Since Login': u.days_since_login !== null ? u.days_since_login : 'N/A',
+        }));
         break;
     }
     
@@ -2220,6 +2248,7 @@ export default function AdminPage() {
                         <SelectItem value="products">Products Summary</SelectItem>
                         <SelectItem value="expedite">Expedite Requests</SelectItem>
                         <SelectItem value="revenue">Revenue Summary</SelectItem>
+                        <SelectItem value="user-activity">User Activity</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -2382,6 +2411,18 @@ export default function AdminPage() {
                               <TableHead>Assigned Engineer</TableHead>
                             </>
                           )}
+                          {reportType === 'user-activity' && (
+                            <>
+                              <TableHead>Email</TableHead>
+                              <TableHead>Name</TableHead>
+                              <TableHead>Role</TableHead>
+                              <TableHead>Engineer</TableHead>
+                              <TableHead>Status</TableHead>
+                              <TableHead>Created</TableHead>
+                              <TableHead>Last Login</TableHead>
+                              <TableHead>Days Since Login</TableHead>
+                            </>
+                          )}
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -2438,6 +2479,40 @@ export default function AdminPage() {
                             <TableCell>{r.product_name}</TableCell>
                             <TableCell>${r.expedite_fee?.toFixed(2) || '0.00'}</TableCell>
                             <TableCell>{r.assigned_engineer_name || '-'}</TableCell>
+                          </TableRow>
+                        ))}
+                        {reportType === 'user-activity' && reportData.map((u: any) => (
+                          <TableRow key={u.id}>
+                            <TableCell className="font-medium">{u.email}</TableCell>
+                            <TableCell>{u.full_name}</TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className={u.role === 'admin' ? 'bg-purple-100 text-purple-800' : 'bg-gray-100 text-gray-800'}>
+                                {u.role}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className={u.is_engineer ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'}>
+                                {u.is_engineer ? 'Yes' : 'No'}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className={u.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}>
+                                {u.is_active ? 'Active' : 'Inactive'}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>{u.created_at ? new Date(u.created_at).toLocaleDateString() : '-'}</TableCell>
+                            <TableCell>{u.last_login_at ? new Date(u.last_login_at).toLocaleString() : 'Never'}</TableCell>
+                            <TableCell>
+                              {u.days_since_login !== null ? (
+                                <Badge variant="outline" className={
+                                  u.days_since_login > 90 ? 'bg-red-100 text-red-800' :
+                                  u.days_since_login > 30 ? 'bg-yellow-100 text-yellow-800' :
+                                  'bg-green-100 text-green-800'
+                                }>
+                                  {u.days_since_login} days
+                                </Badge>
+                              ) : '-'}
+                            </TableCell>
                           </TableRow>
                         ))}
                       </TableBody>
@@ -3883,20 +3958,31 @@ export default function AdminPage() {
                         </TableCell>
                         <TableCell>{new Date(u.created_at).toLocaleDateString()}</TableCell>
                         <TableCell className="text-right">
-                          <Select
-                            value={u.role}
-                            onValueChange={(role) => handleUpdateUserRole(u.id, role)}
-                            disabled={u.id === user?.id}
-                          >
-                            <SelectTrigger className="w-32">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="user">User</SelectItem>
-                              <SelectItem value="engineer">Engineer</SelectItem>
-                              <SelectItem value="admin">Admin</SelectItem>
-                            </SelectContent>
-                          </Select>
+                          <div className="flex items-center justify-end gap-2">
+                            <Select
+                              value={u.role}
+                              onValueChange={(role) => handleUpdateUserRole(u.id, role)}
+                              disabled={u.id === user?.id}
+                            >
+                              <SelectTrigger className="w-32">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="user">User</SelectItem>
+                                <SelectItem value="engineer">Engineer</SelectItem>
+                                <SelectItem value="admin">Admin</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              onClick={() => handleDeleteUser(u.id, u.email)}
+                              disabled={u.id === user?.id}
+                              title={u.id === user?.id ? "Cannot delete your own account" : "Delete user"}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from datetime import timedelta
+from datetime import timedelta, datetime
 
 from app.database import get_db
 from app.models.database_models import User, UserRole
@@ -105,6 +105,11 @@ async def login(credentials: UserLogin, db: AsyncSession = Depends(get_db)):
             detail="Account is deactivated"
         )
     
+    # Update last login timestamp
+    user.last_login_at = datetime.utcnow()
+    await db.commit()
+    await db.refresh(user)
+    
     access_token = create_access_token(
         data={"sub": str(user.id), "email": user.email, "role": user.role.value}
     )
@@ -170,6 +175,9 @@ async def microsoft_callback(
     else:
         user.microsoft_access_token = access_token
         user.microsoft_refresh_token = refresh_token
+    
+    # Update last login timestamp
+    user.last_login_at = datetime.utcnow()
     
     await db.commit()
     await db.refresh(user)

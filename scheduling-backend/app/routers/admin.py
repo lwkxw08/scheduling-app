@@ -5,6 +5,7 @@ from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 from sqlalchemy.exc import IntegrityError
 from typing import List
+from datetime import datetime
 import os
 import uuid
 import aiofiles
@@ -127,6 +128,93 @@ async def update_user_role(
     
     await db.commit()
     return {"message": "Role updated successfully"}
+
+
+@router.delete("/users/{user_id}")
+async def delete_user(
+    user_id: int,
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """Delete a user account. Cannot delete yourself or users with active bookings."""
+    admin_user = await get_admin_user(authorization, db)
+    
+    if admin_user.id == user_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot delete your own account"
+        )
+    
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    
+    # Check if user has any active bookings
+    active_bookings = await db.execute(
+        select(func.count(Booking.id)).where(
+            Booking.booker_id == user_id,
+            Booking.status.in_([BookingStatus.PENDING, BookingStatus.CONFIRMED])
+        )
+    )
+    active_count = active_bookings.scalar()
+    if active_count > 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot delete user with {active_count} active booking(s). Cancel or complete bookings first."
+        )
+    
+    # Check if user is an engineer with active bookings
+    if user.engineer_profile:
+        engineer_bookings = await db.execute(
+            select(func.count(Booking.id)).where(
+                Booking.engineer_id == user.engineer_profile.id,
+                Booking.status.in_([BookingStatus.PENDING, BookingStatus.CONFIRMED])
+            )
+        )
+        engineer_booking_count = engineer_bookings.scalar()
+        if engineer_booking_count > 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Cannot delete engineer with {engineer_booking_count} active booking(s) assigned."
+            )
+    
+    await db.delete(user)
+    await db.commit()
+    return {"message": f"User {user.email} deleted successfully"}
+
+
+@router.get("/reports/user-activity")
+async def get_user_activity_report(
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get user activity report showing last login for all users."""
+    await get_admin_user(authorization, db)
+    
+    result = await db.execute(
+        select(User).options(selectinload(User.engineer_profile)).order_by(User.last_login_at.desc().nullslast())
+    )
+    users = result.scalars().all()
+    
+    report_data = []
+    for user in users:
+        report_data.append({
+            "id": user.id,
+            "email": user.email,
+            "full_name": user.full_name,
+            "role": user.role.value,
+            "is_active": user.is_active,
+            "is_engineer": user.engineer_profile is not None,
+            "created_at": user.created_at.isoformat() if user.created_at else None,
+            "last_login_at": user.last_login_at.isoformat() if user.last_login_at else None,
+            "days_since_login": (
+                (datetime.utcnow() - user.last_login_at).days 
+                if user.last_login_at else None
+            )
+        })
+    
+    return report_data
 
 
 @router.post("/products", response_model=ProductResponse)
