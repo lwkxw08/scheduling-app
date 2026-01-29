@@ -70,12 +70,23 @@ async def get_dashboard_stats(
 ):
     await get_admin_user(authorization, db)
     
-    total_bookings = await db.execute(select(func.count(Booking.id)))
+    # Only count future bookings (scheduled_date >= today)
+    today = datetime.utcnow().date()
+    
+    total_bookings = await db.execute(
+        select(func.count(Booking.id)).where(Booking.scheduled_date >= today)
+    )
     pending_bookings = await db.execute(
-        select(func.count(Booking.id)).where(Booking.status == BookingStatus.PENDING)
+        select(func.count(Booking.id)).where(
+            Booking.status == BookingStatus.PENDING,
+            Booking.scheduled_date >= today
+        )
     )
     confirmed_bookings = await db.execute(
-        select(func.count(Booking.id)).where(Booking.status == BookingStatus.CONFIRMED)
+        select(func.count(Booking.id)).where(
+            Booking.status == BookingStatus.CONFIRMED,
+            Booking.scheduled_date >= today
+        )
     )
     total_engineers = await db.execute(select(func.count(Engineer.id)))
     available_engineers = await db.execute(
