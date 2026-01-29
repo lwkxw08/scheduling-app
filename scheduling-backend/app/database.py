@@ -72,3 +72,46 @@ async def run_migrations(conn):
                 print(f"Added column {column_name} to {table_name}")
             except Exception as e:
                 print(f"Could not add column {column_name} to {table_name}: {e}")
+    
+    # Backfill issues from BookingStatusUpdate to Booking table
+    await backfill_issues(conn)
+
+
+async def backfill_issues(conn):
+    """Backfill issue data from BookingStatusUpdate to Booking table"""
+    from sqlalchemy import text
+    
+    try:
+        # Find all bookings that have issues in BookingStatusUpdate but not in Booking
+        await conn.execute(text("""
+            UPDATE bookings 
+            SET issue_description = (
+                SELECT bsu.issue_description 
+                FROM booking_status_updates bsu 
+                WHERE bsu.booking_id = bookings.id 
+                AND bsu.issue_reported = 1 
+                AND bsu.issue_description IS NOT NULL
+                ORDER BY bsu.created_at DESC 
+                LIMIT 1
+            ),
+            issue_reported_at = (
+                SELECT bsu.created_at 
+                FROM booking_status_updates bsu 
+                WHERE bsu.booking_id = bookings.id 
+                AND bsu.issue_reported = 1 
+                AND bsu.issue_description IS NOT NULL
+                ORDER BY bsu.created_at DESC 
+                LIMIT 1
+            ),
+            issue_resolved = 0
+            WHERE bookings.issue_description IS NULL
+            AND EXISTS (
+                SELECT 1 FROM booking_status_updates bsu 
+                WHERE bsu.booking_id = bookings.id 
+                AND bsu.issue_reported = 1 
+                AND bsu.issue_description IS NOT NULL
+            )
+        """))
+        print(f"Backfilled issues from BookingStatusUpdate to Booking table")
+    except Exception as e:
+        print(f"Could not backfill issues: {e}")
