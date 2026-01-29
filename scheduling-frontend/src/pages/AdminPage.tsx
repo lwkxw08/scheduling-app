@@ -203,11 +203,13 @@ export default function AdminPage() {
   const [emailRuleIsActive, setEmailRuleIsActive] = useState(true);
   const [isProcessingRules, setIsProcessingRules] = useState(false);
 
-  // Issues Reported state
-  const [openIssues, setOpenIssues] = useState<any[]>([]);
-  const [openIssuesCount, setOpenIssuesCount] = useState(0);
-  const [showResolvedIssues, setShowResolvedIssues] = useState(false);
-  const [isLoadingIssues, setIsLoadingIssues] = useState(false);
+    // Issues Reported state
+    const [openIssues, setOpenIssues] = useState<any[]>([]);
+    const [openIssuesCount, setOpenIssuesCount] = useState(0);
+    const [showResolvedIssues, setShowResolvedIssues] = useState(false);
+    const [isLoadingIssues, setIsLoadingIssues] = useState(false);
+    const [selectedIssue, setSelectedIssue] = useState<any | null>(null);
+    const [showIssueDetailDialog, setShowIssueDetailDialog] = useState(false);
 
   useEffect(() => {
     if (user?.role !== 'admin') {
@@ -2342,9 +2344,18 @@ export default function AdminPage() {
                           <TableCell>{issue.customer_name}</TableCell>
                           <TableCell>{issue.product_name || '-'}</TableCell>
                           <TableCell>{issue.engineer_name || '-'}</TableCell>
-                          <TableCell className="max-w-xs truncate" title={issue.issue_description}>
-                            {issue.issue_description}
-                          </TableCell>
+                                                    <TableCell className="max-w-xs">
+                                                      <Button 
+                                                        variant="link" 
+                                                        className="p-0 h-auto text-left justify-start max-w-full"
+                                                        onClick={() => {
+                                                          setSelectedIssue(issue);
+                                                          setShowIssueDetailDialog(true);
+                                                        }}
+                                                      >
+                                                        <span className="truncate block max-w-[200px]">{issue.issue_description}</span>
+                                                      </Button>
+                                                    </TableCell>
                           <TableCell>
                             {issue.issue_reported_at ? new Date(issue.issue_reported_at).toLocaleDateString() : '-'}
                           </TableCell>
@@ -2377,11 +2388,97 @@ export default function AdminPage() {
                     </TableBody>
                   </Table>
                 )}
-              </CardContent>
-            </Card>
-          </TabsContent>
+                        </CardContent>
+                      </Card>
 
-          <TabsContent value="reports">
+                      {/* Issue Detail Dialog */}
+                      <Dialog open={showIssueDetailDialog} onOpenChange={setShowIssueDetailDialog}>
+                        <DialogContent className="max-w-lg">
+                          <DialogHeader>
+                            <DialogTitle>Issue Details</DialogTitle>
+                            <DialogDescription>
+                              Issue reported for booking {selectedIssue?.order_reference}
+                            </DialogDescription>
+                          </DialogHeader>
+                          {selectedIssue && (
+                            <div className="space-y-4">
+                              <div className="grid grid-cols-2 gap-4 text-sm">
+                                <div>
+                                  <p className="text-gray-500">Order Reference</p>
+                                  <p className="font-medium">{selectedIssue.order_reference}</p>
+                                </div>
+                                <div>
+                                  <p className="text-gray-500">Customer</p>
+                                  <p className="font-medium">{selectedIssue.customer_name}</p>
+                                </div>
+                                <div>
+                                  <p className="text-gray-500">Product</p>
+                                  <p className="font-medium">{selectedIssue.product_name || '-'}</p>
+                                </div>
+                                <div>
+                                  <p className="text-gray-500">Engineer</p>
+                                  <p className="font-medium">{selectedIssue.engineer_name || '-'}</p>
+                                </div>
+                                <div>
+                                  <p className="text-gray-500">Reported</p>
+                                  <p className="font-medium">
+                                    {selectedIssue.issue_reported_at 
+                                      ? new Date(selectedIssue.issue_reported_at).toLocaleString() 
+                                      : '-'}
+                                  </p>
+                                </div>
+                                <div>
+                                  <p className="text-gray-500">Status</p>
+                                  <Badge variant={selectedIssue.issue_resolved ? 'secondary' : 'destructive'}>
+                                    {selectedIssue.issue_resolved ? 'Resolved' : 'Open'}
+                                  </Badge>
+                                </div>
+                              </div>
+                              <div>
+                                <p className="text-gray-500 text-sm mb-2">Issue Description</p>
+                                <div className="bg-gray-50 p-4 rounded-lg border">
+                                  <p className="whitespace-pre-wrap">{selectedIssue.issue_description}</p>
+                                </div>
+                              </div>
+                              {selectedIssue.engineer_notes && (
+                                <div>
+                                  <p className="text-gray-500 text-sm mb-2">Engineer Notes</p>
+                                  <div className="bg-gray-50 p-4 rounded-lg border">
+                                    <p className="whitespace-pre-wrap">{selectedIssue.engineer_notes}</p>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                          <DialogFooter className="flex gap-2">
+                            <Button variant="outline" onClick={() => setShowIssueDetailDialog(false)}>
+                              Close
+                            </Button>
+                            <Button 
+                              variant="link" 
+                              onClick={() => {
+                                setShowIssueDetailDialog(false);
+                                navigate(`/bookings/${selectedIssue?.id}`);
+                              }}
+                            >
+                              View Booking
+                            </Button>
+                            {selectedIssue && !selectedIssue.issue_resolved && (
+                              <Button 
+                                onClick={() => {
+                                  handleResolveIssue(selectedIssue.id);
+                                  setShowIssueDetailDialog(false);
+                                }}
+                              >
+                                Mark Resolved
+                              </Button>
+                            )}
+                          </DialogFooter>
+                        </DialogContent>
+                      </Dialog>
+                    </TabsContent>
+
+                    <TabsContent value="reports">
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between">
