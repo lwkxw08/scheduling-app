@@ -11,7 +11,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../co
 import { Badge } from '../components/ui/badge';
 import { Checkbox } from '../components/ui/checkbox';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
-import { Calendar, ArrowLeft, Clock, User, AlertTriangle, Edit, Trash2, XCircle, Loader2, AlertCircle } from 'lucide-react';
+import { Calendar, ArrowLeft, Clock, User, AlertTriangle, Edit, Trash2, XCircle, Loader2, AlertCircle, UserCog } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 
 export default function BookingDetailPage() {
   const navigate = useNavigate();
@@ -44,9 +45,16 @@ export default function BookingDetailPage() {
   const [expediteFeeAcknowledged, setExpediteFeeAcknowledged] = useState(false);
   const [isSubmittingExpedite, setIsSubmittingExpedite] = useState(false);
   const [expediteRequestedTime, setExpediteRequestedTime] = useState('09:00');
-  const [amendmentNotes, setAmendmentNotes] = useState('');
+    const [amendmentNotes, setAmendmentNotes] = useState('');
   
-  const isAdmin = user?.role === 'admin';
+    // Reassign engineer state (admin only)
+    const [showReassignDialog, setShowReassignDialog] = useState(false);
+    const [allEngineers, setAllEngineers] = useState<any[]>([]);
+    const [selectedReassignEngineerId, setSelectedReassignEngineerId] = useState<string>('');
+    const [isReassigning, setIsReassigning] = useState(false);
+    const [isLoadingEngineers, setIsLoadingEngineers] = useState(false);
+  
+    const isAdmin = user?.role === 'admin';
 
   useEffect(() => {
     loadBooking();
@@ -78,22 +86,56 @@ export default function BookingDetailPage() {
     }
   };
 
-  const handlePermanentDelete = async () => {
-    if (!booking) return;
+    const handlePermanentDelete = async () => {
+      if (!booking) return;
     
-    setIsDeleting(true);
-    setError('');
+      setIsDeleting(true);
+      setError('');
     
-    try {
-      await api.permanentlyDeleteBooking(booking.id);
-      navigate('/dashboard');
-    } catch (err: any) {
-      setError(err.message || 'Failed to delete booking');
-      setIsDeleting(false);
-    }
-  };
+      try {
+        await api.permanentlyDeleteBooking(booking.id);
+        navigate('/dashboard');
+      } catch (err: any) {
+        setError(err.message || 'Failed to delete booking');
+        setIsDeleting(false);
+      }
+    };
 
-  const getStatusColor = (status: string) => {
+    const loadEngineersForReassign = async () => {
+      setIsLoadingEngineers(true);
+      try {
+        const engineers = await api.getEngineers();
+        setAllEngineers(engineers as any[]);
+        if (booking?.engineer?.id) {
+          setSelectedReassignEngineerId(booking.engineer.id.toString());
+        }
+      } catch (err: any) {
+        setError(err.message || 'Failed to load engineers');
+      } finally {
+        setIsLoadingEngineers(false);
+      }
+    };
+
+    const handleReassignEngineer = async () => {
+      if (!booking || !selectedReassignEngineerId) return;
+    
+      setIsReassigning(true);
+      setError('');
+    
+      try {
+        await api.updateBooking(booking.id, {
+          engineer_id: parseInt(selectedReassignEngineerId)
+        });
+        await loadBooking();
+        setShowReassignDialog(false);
+      } catch (err: any) {
+        setError(err.message || 'Failed to reassign engineer');
+      } finally {
+        setIsReassigning(false);
+      }
+    };
+
+    const getStatusColor = (status: string) => {
     switch (status) {
       case 'confirmed':
         return 'bg-green-100 text-green-800';
@@ -362,26 +404,88 @@ export default function BookingDetailPage() {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Assigned Engineer</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {booking.engineer?.user ? (
-                <div className="flex items-center">
-                  <div className="w-12 h-12 bg-indigo-100 rounded-full flex items-center justify-center mr-4">
-                    <User className="w-6 h-6 text-indigo-600" />
-                  </div>
-                  <div>
-                    <p className="font-medium">{booking.engineer.user.full_name}</p>
-                    <p className="text-sm text-gray-500">{booking.engineer.calendar_email}</p>
-                  </div>
-                </div>
-              ) : (
-                <p className="text-gray-500">No engineer assigned</p>
-              )}
-            </CardContent>
-          </Card>
+                    <Card>
+                      <CardHeader className="flex flex-row items-center justify-between">
+                        <CardTitle>Assigned Engineer</CardTitle>
+                        {isAdmin && booking.status !== 'cancelled' && booking.status !== 'completed' && (
+                          <Dialog open={showReassignDialog} onOpenChange={(open) => {
+                            setShowReassignDialog(open);
+                            if (open) loadEngineersForReassign();
+                          }}>
+                            <DialogTrigger asChild>
+                              <Button variant="outline" size="sm">
+                                <UserCog className="w-4 h-4 mr-2" />
+                                Reassign
+                              </Button>
+                            </DialogTrigger>
+                            <DialogContent>
+                              <DialogHeader>
+                                <DialogTitle>Reassign Engineer</DialogTitle>
+                                <DialogDescription>
+                                  Select a different engineer to assign to this booking.
+                                </DialogDescription>
+                              </DialogHeader>
+                              <div className="space-y-4 py-4">
+                                {isLoadingEngineers ? (
+                                  <div className="flex justify-center py-4">
+                                    <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+                                  </div>
+                                ) : (
+                                  <div className="space-y-2">
+                                    <Label>Select Engineer</Label>
+                                    <Select value={selectedReassignEngineerId} onValueChange={setSelectedReassignEngineerId}>
+                                      <SelectTrigger>
+                                        <SelectValue placeholder="Select an engineer" />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {allEngineers.map((eng) => (
+                                          <SelectItem key={eng.id} value={eng.id.toString()}>
+                                            {eng.user?.full_name || eng.calendar_email}
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                )}
+                              </div>
+                              <DialogFooter>
+                                <Button variant="outline" onClick={() => setShowReassignDialog(false)}>
+                                  Cancel
+                                </Button>
+                                <Button 
+                                  onClick={handleReassignEngineer} 
+                                  disabled={isReassigning || !selectedReassignEngineerId}
+                                >
+                                  {isReassigning ? (
+                                    <>
+                                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                      Reassigning...
+                                    </>
+                                  ) : (
+                                    'Reassign Engineer'
+                                  )}
+                                </Button>
+                              </DialogFooter>
+                            </DialogContent>
+                          </Dialog>
+                        )}
+                      </CardHeader>
+                      <CardContent>
+                        {booking.engineer?.user ? (
+                          <div className="flex items-center">
+                            <div className="w-12 h-12 bg-indigo-100 rounded-full flex items-center justify-center mr-4">
+                              <User className="w-6 h-6 text-indigo-600" />
+                            </div>
+                            <div>
+                              <p className="font-medium">{booking.engineer.user.full_name}</p>
+                              <p className="text-sm text-gray-500">{booking.engineer.calendar_email}</p>
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="text-gray-500">No engineer assigned</p>
+                        )}
+                      </CardContent>
+                    </Card>
 
           {/* Additional Information Section */}
           <Card>
