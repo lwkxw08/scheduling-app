@@ -395,6 +395,11 @@ async def create_engineer(
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     
+    # Check if user is already an engineer
+    existing_engineer = await db.execute(select(Engineer).where(Engineer.user_id == engineer_data.user_id))
+    if existing_engineer.scalar_one_or_none():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="This user is already an engineer")
+    
     user.role = UserRole.ENGINEER
     
     engineer = Engineer(
