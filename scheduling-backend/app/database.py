@@ -82,8 +82,20 @@ async def backfill_issues(conn):
     from sqlalchemy import text
     
     try:
-        # Find all bookings that have issues in BookingStatusUpdate but not in Booking
-        await conn.execute(text("""
+        # First, count how many issues exist in BookingStatusUpdate
+        count_result = await conn.execute(text("""
+            SELECT COUNT(DISTINCT booking_id) as count 
+            FROM booking_status_updates 
+            WHERE issue_reported = 1 
+            AND issue_description IS NOT NULL
+        """))
+        row = count_result.fetchone()
+        total_issues = row[0] if row else 0
+        print(f"Found {total_issues} bookings with issues in BookingStatusUpdate table")
+        
+        # Update ALL bookings that have issues in BookingStatusUpdate (not just those with NULL issue_description)
+        # This ensures we capture all issues even if the booking was updated after the initial backfill
+        result = await conn.execute(text("""
             UPDATE bookings 
             SET issue_description = (
                 SELECT bsu.issue_description 
@@ -103,9 +115,8 @@ async def backfill_issues(conn):
                 ORDER BY bsu.created_at DESC 
                 LIMIT 1
             ),
-            issue_resolved = 0
-            WHERE bookings.issue_description IS NULL
-            AND EXISTS (
+            issue_resolved = COALESCE(issue_resolved, 0)
+            WHERE EXISTS (
                 SELECT 1 FROM booking_status_updates bsu 
                 WHERE bsu.booking_id = bookings.id 
                 AND bsu.issue_reported = 1 
@@ -113,5 +124,15 @@ async def backfill_issues(conn):
             )
         """))
         print(f"Backfilled issues from BookingStatusUpdate to Booking table")
+        
+        # Count how many bookings now have issues
+        count_result2 = await conn.execute(text("""
+            SELECT COUNT(*) as count 
+            FROM bookings 
+            WHERE issue_description IS NOT NULL
+        """))
+        row2 = count_result2.fetchone()
+        bookings_with_issues = row2[0] if row2 else 0
+        print(f"Now {bookings_with_issues} bookings have issue_description populated")
     except Exception as e:
         print(f"Could not backfill issues: {e}")

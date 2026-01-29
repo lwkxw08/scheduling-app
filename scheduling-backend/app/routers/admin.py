@@ -70,11 +70,14 @@ async def get_dashboard_stats(
 ):
     await get_admin_user(authorization, db)
     
-    # Only count future bookings (scheduled_date >= today)
+    # Only count future bookings (scheduled_date >= today) and exclude cancelled
     today = datetime.utcnow().date()
     
     total_bookings = await db.execute(
-        select(func.count(Booking.id)).where(Booking.scheduled_date >= today)
+        select(func.count(Booking.id)).where(
+            Booking.scheduled_date >= today,
+            Booking.status != BookingStatus.CANCELLED
+        )
     )
     pending_bookings = await db.execute(
         select(func.count(Booking.id)).where(
