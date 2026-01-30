@@ -6,7 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from datetime import datetime
 
-from app.models.database_models import SystemConfig, EmailTemplate, TemplateType, Booking, Engineer
+from app.models.database_models import SystemConfig, EmailTemplate, TemplateType, Booking, Engineer, BookingFee, BookingFeeStatus
+from sqlalchemy.orm import selectinload
 
 
 async def get_smtp_config(db: AsyncSession) -> dict:
@@ -50,7 +51,7 @@ async def get_email_template(db: AsyncSession, template_type: TemplateType) -> O
 
 
 def replace_placeholders(text: str, booking_data: dict) -> str:
-    """Replace template placeholders with actual booking data"""
+    """Replace template placeholders with actual booking data, including dynamic fee placeholders"""
     if not text:
         return text
     
@@ -73,7 +74,13 @@ def replace_placeholders(text: str, booking_data: dict) -> str:
         '{{issue_description}}': str(booking_data.get('issue_description', '') or ''),
         '{{cancellation_fee}}': str(booking_data.get('cancellation_fee', '0')),
         '{{expedite_fee}}': str(booking_data.get('expedite_fee', '0')),
+        '{{total_fees}}': str(booking_data.get('total_fees', '0')),
     }
+    
+    # Add dynamic fee placeholders from booking_data
+    fee_data = booking_data.get('fee_data', {})
+    for fee_key, fee_value in fee_data.items():
+        replacements[f'{{{{{fee_key}}}}}'] = str(fee_value)
     
     result = text
     for placeholder, value in replacements.items():
@@ -83,7 +90,7 @@ def replace_placeholders(text: str, booking_data: dict) -> str:
 
 
 def build_booking_data(booking: Booking, booker_name: str, booker_email: str) -> dict:
-    """Build booking data dictionary for template replacement"""
+    """Build booking data dictionary for template replacement, including individual fee amounts"""
     scheduled_date = booking.scheduled_date
     if isinstance(scheduled_date, datetime):
         date_str = scheduled_date.strftime('%Y-%m-%d')
@@ -91,6 +98,32 @@ def build_booking_data(booking: Booking, booker_name: str, booker_email: str) ->
     else:
         date_str = str(scheduled_date)
         time_str = ''
+    
+    # Build individual fee data from booking fees
+    fee_data = {}
+    total_fees = 0
+    if hasattr(booking, 'fees') and booking.fees:
+        for booking_fee in booking.fees:
+            if booking_fee.status == BookingFeeStatus.APPROVED and booking_fee.fee:
+                # Convert fee name to placeholder format: "Late Cancellation" -> "fee_late_cancellation"
+                fee_name = booking_fee.fee.name
+                placeholder_name = fee_name.lower().replace(' ', '_').replace('-', '_')
+                placeholder_name = ''.join(c if c.isalnum() or c == '_' else '' for c in placeholder_name)
+                fee_key = f"fee_{placeholder_name}"
+                
+                # Sum up if same fee applied multiple times
+                if fee_key in fee_data:
+                    fee_data[fee_key] = float(fee_data[fee_key]) + float(booking_fee.amount)
+                else:
+                    fee_data[fee_key] = float(booking_fee.amount)
+                
+                total_fees += float(booking_fee.amount)
+    
+    # Also add legacy cancellation_fee and expedite_fee to total
+    if booking.cancellation_fee:
+        total_fees += float(booking.cancellation_fee)
+    if booking.expedite_fee:
+        total_fees += float(booking.expedite_fee)
     
     return {
         'order_reference': booking.order_reference,
@@ -111,6 +144,8 @@ def build_booking_data(booking: Booking, booker_name: str, booker_email: str) ->
         'issue_description': getattr(booking, 'issue_description', '') or '',
         'cancellation_fee': booking.cancellation_fee or 0,
         'expedite_fee': booking.expedite_fee or 0,
+        'total_fees': total_fees,
+        'fee_data': fee_data,
     }
 
 

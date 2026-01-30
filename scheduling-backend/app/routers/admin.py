@@ -1165,14 +1165,52 @@ async def create_default_schedules(
 
 
 # Email Template Endpoints
-@router.get("/templates/placeholders", response_model=TemplatePlaceholders)
+@router.get("/templates/placeholders")
 async def get_template_placeholders(
     authorization: str = Header(None),
     db: AsyncSession = Depends(get_db)
 ):
-    """Get available placeholders for templates"""
+    """Get available placeholders for templates, including dynamic fee placeholders"""
     await get_admin_user(authorization, db)
-    return TemplatePlaceholders()
+    
+    # Base placeholders
+    base_placeholders = [
+        "{{order_reference}}",
+        "{{customer_name}}",
+        "{{scheduled_date}}",
+        "{{scheduled_time}}",
+        "{{duration_hours}}",
+        "{{product_name}}",
+        "{{change_type}}",
+        "{{engineer_name}}",
+        "{{engineer_email}}",
+        "{{booker_name}}",
+        "{{booker_email}}",
+        "{{booking_status}}",
+        "{{notes}}",
+        "{{booking_notes}}",
+        "{{engineer_notes}}",
+        "{{issue_description}}",
+        "{{cancellation_fee}}",
+        "{{expedite_fee}}",
+        "{{total_fees}}",
+    ]
+    
+    # Get all active fees and create dynamic placeholders
+    result = await db.execute(select(Fee).where(Fee.is_active == True))
+    fees = result.scalars().all()
+    
+    fee_placeholders = []
+    for fee in fees:
+        # Convert fee name to placeholder format: "Late Cancellation" -> "fee_late_cancellation"
+        placeholder_name = fee.name.lower().replace(' ', '_').replace('-', '_')
+        placeholder_name = ''.join(c if c.isalnum() or c == '_' else '' for c in placeholder_name)
+        fee_placeholders.append(f"{{{{fee_{placeholder_name}}}}}")
+    
+    return {
+        "booking_fields": base_placeholders + fee_placeholders,
+        "fee_placeholders": fee_placeholders
+    }
 
 
 @router.post("/email-templates", response_model=EmailTemplateResponse)
@@ -2460,7 +2498,7 @@ async def get_revenue_summary_report(
     authorization: str = Header(None),
     db: AsyncSession = Depends(get_db)
 ):
-    """Get revenue summary report"""
+    """Get revenue summary report with individual fee breakdowns"""
     await get_admin_user(authorization, db)
     
     from datetime import datetime
@@ -2505,6 +2543,41 @@ async def get_revenue_summary_report(
     expedite_result = await db.execute(expedite_query)
     expedite_row = expedite_result.one()
     
+    # Get individual fee breakdowns from BookingFee table (approved fees only)
+    fee_breakdown_query = select(
+        Fee.name,
+        Fee.fee_type,
+        func.sum(BookingFee.amount),
+        func.count(BookingFee.id)
+    ).join(Fee, BookingFee.fee_id == Fee.id).join(
+        Booking, BookingFee.booking_id == Booking.id
+    ).where(BookingFee.status == BookingFeeStatus.APPROVED)
+    
+    if start_date:
+        fee_breakdown_query = fee_breakdown_query.where(Booking.scheduled_date >= datetime.fromisoformat(start_date))
+    if end_date:
+        fee_breakdown_query = fee_breakdown_query.where(Booking.scheduled_date <= datetime.fromisoformat(end_date))
+    
+    fee_breakdown_query = fee_breakdown_query.group_by(Fee.id, Fee.name, Fee.fee_type)
+    
+    fee_result = await db.execute(fee_breakdown_query)
+    fee_rows = fee_result.all()
+    
+    # Build individual fee breakdown list
+    individual_fees = []
+    total_other_fees = 0
+    for fee_row in fee_rows:
+        fee_name, fee_type, total_amount, count = fee_row
+        fee_entry = {
+            "name": fee_name,
+            "type": fee_type.value if hasattr(fee_type, 'value') else str(fee_type),
+            "total_amount": float(total_amount or 0),
+            "count": count or 0
+        }
+        individual_fees.append(fee_entry)
+        if fee_type and (fee_type.value if hasattr(fee_type, 'value') else str(fee_type)) == "other":
+            total_other_fees += float(total_amount or 0)
+    
     return {
         "total_bookings": row[0] or 0,
         "total_expedite_fees": float(row[1] or 0),
@@ -2512,6 +2585,8 @@ async def get_revenue_summary_report(
         "status_breakdown": status_breakdown,
         "approved_expedite_requests": expedite_row[0] or 0,
         "expedite_request_fees": float(expedite_row[1] or 0),
+        "individual_fees": individual_fees,
+        "total_other_fees": total_other_fees,
     }
 
 

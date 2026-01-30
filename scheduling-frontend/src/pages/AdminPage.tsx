@@ -2632,49 +2632,68 @@ export default function AdminPage() {
                 )}
 
                 {reportType === 'revenue' && revenueSummary && (
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                    <Card>
-                      <CardContent className="pt-6">
-                        <div className="text-2xl font-bold">{revenueSummary.total_bookings}</div>
-                        <p className="text-sm text-gray-500">Total Bookings</p>
-                      </CardContent>
-                    </Card>
-                    <Card>
-                      <CardContent className="pt-6">
-                        <div className="text-2xl font-bold text-green-600">${revenueSummary.total_expedite_fees?.toFixed(2) || '0.00'}</div>
-                        <p className="text-sm text-gray-500">Expedite Fees</p>
-                      </CardContent>
-                    </Card>
-                    <Card>
-                      <CardContent className="pt-6">
-                        <div className="text-2xl font-bold text-red-600">${revenueSummary.total_cancellation_fees?.toFixed(2) || '0.00'}</div>
-                        <p className="text-sm text-gray-500">Cancellation Fees</p>
-                      </CardContent>
-                    </Card>
-                    <Card>
-                      <CardContent className="pt-6">
-                        <div className="text-2xl font-bold">{revenueSummary.approved_expedite_requests}</div>
-                        <p className="text-sm text-gray-500">Approved Expedite Requests</p>
-                      </CardContent>
-                    </Card>
-                    <Card>
-                      <CardContent className="pt-6">
-                        <div className="text-2xl font-bold text-blue-600">${revenueSummary.expedite_request_fees?.toFixed(2) || '0.00'}</div>
-                        <p className="text-sm text-gray-500">Expedite Request Fees</p>
-                      </CardContent>
-                    </Card>
-                    {revenueSummary.status_breakdown && (
+                  <div className="space-y-6">
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                       <Card>
                         <CardContent className="pt-6">
-                          <div className="text-sm font-medium mb-2">Status Breakdown</div>
-                          {Object.entries(revenueSummary.status_breakdown).map(([status, count]) => (
-                            <div key={status} className="flex justify-between text-sm">
-                              <span className="capitalize">{status}</span>
-                              <span className="font-medium">{count as number}</span>
-                            </div>
-                          ))}
+                          <div className="text-2xl font-bold">{revenueSummary.total_bookings}</div>
+                          <p className="text-sm text-gray-500">Total Bookings</p>
                         </CardContent>
                       </Card>
+                      <Card>
+                        <CardContent className="pt-6">
+                          <div className="text-2xl font-bold text-green-600">${revenueSummary.total_expedite_fees?.toFixed(2) || '0.00'}</div>
+                          <p className="text-sm text-gray-500">Expedite Fees</p>
+                        </CardContent>
+                      </Card>
+                      <Card>
+                        <CardContent className="pt-6">
+                          <div className="text-2xl font-bold text-red-600">${revenueSummary.total_cancellation_fees?.toFixed(2) || '0.00'}</div>
+                          <p className="text-sm text-gray-500">Cancellation Fees</p>
+                        </CardContent>
+                      </Card>
+                      <Card>
+                        <CardContent className="pt-6">
+                          <div className="text-2xl font-bold">{revenueSummary.approved_expedite_requests}</div>
+                          <p className="text-sm text-gray-500">Approved Expedite Requests</p>
+                        </CardContent>
+                      </Card>
+                      <Card>
+                        <CardContent className="pt-6">
+                          <div className="text-2xl font-bold text-blue-600">${revenueSummary.expedite_request_fees?.toFixed(2) || '0.00'}</div>
+                          <p className="text-sm text-gray-500">Expedite Request Fees</p>
+                        </CardContent>
+                      </Card>
+                      {revenueSummary.status_breakdown && (
+                        <Card>
+                          <CardContent className="pt-6">
+                            <div className="text-sm font-medium mb-2">Status Breakdown</div>
+                            {Object.entries(revenueSummary.status_breakdown).map(([status, count]) => (
+                              <div key={status} className="flex justify-between text-sm">
+                                <span className="capitalize">{status}</span>
+                                <span className="font-medium">{count as number}</span>
+                              </div>
+                            ))}
+                          </CardContent>
+                        </Card>
+                      )}
+                    </div>
+                    
+                    {revenueSummary.individual_fees && revenueSummary.individual_fees.length > 0 && (
+                      <div>
+                        <h3 className="text-lg font-semibold mb-3">Individual Fee Breakdown</h3>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                          {revenueSummary.individual_fees.map((fee: { name: string; type: string; total_amount: number; count: number }) => (
+                            <Card key={fee.name}>
+                              <CardContent className="pt-6">
+                                <div className="text-xl font-bold text-purple-600">${fee.total_amount?.toFixed(2) || '0.00'}</div>
+                                <p className="text-sm font-medium">{fee.name}</p>
+                                <p className="text-xs text-gray-500">{fee.count} occurrence{fee.count !== 1 ? 's' : ''} ({fee.type})</p>
+                              </CardContent>
+                            </Card>
+                          ))}
+                        </div>
+                      </div>
                     )}
                   </div>
                 )}
