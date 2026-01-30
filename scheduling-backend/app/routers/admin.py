@@ -2156,6 +2156,96 @@ async def get_bookings_report(
     } for b in bookings]
 
 
+@router.get("/reports/full-data-export")
+async def get_full_data_export(
+    start_date: str = None,
+    end_date: str = None,
+    status: str = None,
+    product_id: int = None,
+    engineer_id: int = None,
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get full data export with all booking fields for Excel export"""
+    await get_admin_user(authorization, db)
+    
+    from datetime import datetime
+    
+    query = select(Booking).options(
+        selectinload(Booking.engineer).selectinload(Engineer.user),
+        selectinload(Booking.product),
+        selectinload(Booking.change_type),
+        selectinload(Booking.booker),
+        selectinload(Booking.fees).selectinload(BookingFee.fee)
+    )
+    
+    if start_date:
+        query = query.where(Booking.scheduled_date >= datetime.fromisoformat(start_date))
+    if end_date:
+        query = query.where(Booking.scheduled_date <= datetime.fromisoformat(end_date))
+    if status:
+        query = query.where(Booking.status == status)
+    if product_id:
+        query = query.where(Booking.product_id == product_id)
+    if engineer_id:
+        query = query.where(Booking.engineer_id == engineer_id)
+    
+    query = query.order_by(Booking.scheduled_date.desc())
+    result = await db.execute(query)
+    bookings = result.scalars().all()
+    
+    # Get custom fields for column headers
+    custom_fields_result = await db.execute(select(CustomField).where(CustomField.is_active == True))
+    custom_fields = custom_fields_result.scalars().all()
+    
+    export_data = []
+    for b in bookings:
+        # Calculate total fees
+        total_fees = sum(f.amount for f in b.fees if f.status.value == 'approved') if b.fees else 0
+        pending_fees = sum(f.amount for f in b.fees if f.status.value == 'pending') if b.fees else 0
+        
+        row = {
+            "id": b.id,
+            "order_reference": b.order_reference,
+            "customer_name": b.customer_name,
+            "scheduled_date": b.scheduled_date.isoformat() if b.scheduled_date else None,
+            "duration_hours": b.duration_hours,
+            "status": b.status.value if hasattr(b.status, 'value') else b.status,
+            "product_name": b.product.name if b.product else None,
+            "change_type_name": b.change_type.name if b.change_type else None,
+            "engineer_name": b.engineer.user.full_name if b.engineer and b.engineer.user else None,
+            "engineer_email": b.engineer.calendar_email if b.engineer else None,
+            "booker_name": b.booker.full_name if b.booker else None,
+            "booker_email": b.booker.email if b.booker else None,
+            "notes": b.notes,
+            "engineer_notes": b.engineer_notes,
+            "additional_emails": ", ".join(b.additional_emails) if b.additional_emails else None,
+            "cancellation_fee": b.cancellation_fee,
+            "expedite_fee": b.expedite_fee,
+            "total_approved_fees": total_fees,
+            "total_pending_fees": pending_fees,
+            "issue_description": b.issue_description,
+            "issue_reported_at": b.issue_reported_at.isoformat() if b.issue_reported_at else None,
+            "issue_resolved": b.issue_resolved,
+            "outlook_event_id": b.outlook_event_id,
+            "sharepoint_item_id": b.sharepoint_item_id,
+            "engineer_attachment_url": b.engineer_attachment_url,
+            "customer_attachment_url": b.customer_attachment_url,
+            "created_at": b.created_at.isoformat() if b.created_at else None,
+            "updated_at": b.updated_at.isoformat() if b.updated_at else None,
+        }
+        
+        # Add custom field values
+        if b.custom_fields_data:
+            for cf in custom_fields:
+                field_key = f"custom_{cf.id}"
+                row[f"custom_field_{cf.name}"] = b.custom_fields_data.get(str(cf.id), "")
+        
+        export_data.append(row)
+    
+    return export_data
+
+
 @router.get("/reports/engineers-utilization")
 async def get_engineers_utilization_report(
     start_date: str = None,

@@ -1058,18 +1058,20 @@ export default function AdminPage() {
     }
   };
 
-    const getTriggerTypeLabel = (type: string) => {
-      switch (type) {
-        case 'time_before_booking': return 'Time Before Booking';
-        case 'time_after_booking_created': return 'Time After Booking Created';
-        case 'status_is': return 'When Status Is';
-        case 'note_added': return 'When Note Added';
-        case 'issue_reported': return 'When Issue Reported';
-        case 'expedite_approved': return 'When Expedite Approved';
-        case 'expedite_rejected': return 'When Expedite Rejected';
-        default: return type;
-      }
-    };
+        const getTriggerTypeLabel = (type: string) => {
+          switch (type) {
+            case 'time_before_booking': return 'Time Before Booking';
+            case 'time_after_booking_created': return 'Time After Booking Created';
+            case 'status_is': return 'When Status Is';
+            case 'note_added': return 'When Note Added';
+            case 'issue_reported': return 'When Issue Reported';
+            case 'expedite_approved': return 'When Expedite Approved';
+            case 'expedite_rejected': return 'When Expedite Rejected';
+            case 'fee_approved': return 'When Fee Approved';
+            case 'fee_rejected': return 'When Fee Rejected';
+            default: return type;
+          }
+        };
 
   // Expedite Request handlers
   const loadExpediteRequests = async () => {
@@ -1169,12 +1171,18 @@ export default function AdminPage() {
           setRevenueSummary(revenue);
           data = [];
           break;
-        case 'user-activity':
-          data = await api.getUserActivityReport() as any[];
-          break;
-      }
+              case 'user-activity':
+                data = await api.getUserActivityReport() as any[];
+                break;
+              case 'full-data-export':
+                if (reportProductFilter && reportProductFilter !== 'all') filters.product_id = parseInt(reportProductFilter);
+                if (reportEngineerFilter && reportEngineerFilter !== 'all') filters.engineer_id = parseInt(reportEngineerFilter);
+                if (reportStatusFilter && reportStatusFilter !== 'all') filters.status = reportStatusFilter;
+                data = await api.getFullDataExport(filters) as any[];
+                break;
+            }
       
-      setReportData(data);
+            setReportData(data);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -1269,22 +1277,64 @@ export default function AdminPage() {
           }
         }
         break;
-      case 'user-activity':
-        sheetName = 'User Activity';
-        exportData = reportData.map(u => ({
-          'Email': u.email,
-          'Full Name': u.full_name,
-          'Role': u.role,
-          'Is Engineer': u.is_engineer ? 'Yes' : 'No',
-          'Status': u.is_active ? 'Active' : 'Inactive',
-          'Created At': u.created_at,
-          'Last Login': u.last_login_at || 'Never',
-          'Days Since Login': u.days_since_login !== null ? u.days_since_login : 'N/A',
-        }));
-        break;
-    }
+          case 'user-activity':
+            sheetName = 'User Activity';
+            exportData = reportData.map(u => ({
+              'Email': u.email,
+              'Full Name': u.full_name,
+              'Role': u.role,
+              'Is Engineer': u.is_engineer ? 'Yes' : 'No',
+              'Status': u.is_active ? 'Active' : 'Inactive',
+              'Created At': u.created_at,
+              'Last Login': u.last_login_at || 'Never',
+              'Days Since Login': u.days_since_login !== null ? u.days_since_login : 'N/A',
+            }));
+            break;
+          case 'full-data-export':
+            sheetName = 'Full Data Export';
+            exportData = reportData.map(b => {
+              const row: any = {
+                'ID': b.id,
+                'Order Reference': b.order_reference,
+                'Customer Name': b.customer_name,
+                'Scheduled Date': b.scheduled_date,
+                'Duration (Hours)': b.duration_hours,
+                'Status': b.status,
+                'Product': b.product_name,
+                'Change Type': b.change_type_name,
+                'Engineer Name': b.engineer_name,
+                'Engineer Email': b.engineer_email,
+                'Booker Name': b.booker_name,
+                'Booker Email': b.booker_email,
+                'Notes': b.notes,
+                'Engineer Notes': b.engineer_notes,
+                'Additional Emails': b.additional_emails,
+                'Cancellation Fee': b.cancellation_fee,
+                'Expedite Fee': b.expedite_fee,
+                'Total Approved Fees': b.total_approved_fees,
+                'Total Pending Fees': b.total_pending_fees,
+                'Issue Description': b.issue_description,
+                'Issue Reported At': b.issue_reported_at,
+                'Issue Resolved': b.issue_resolved ? 'Yes' : 'No',
+                'Outlook Event ID': b.outlook_event_id,
+                'SharePoint Item ID': b.sharepoint_item_id,
+                'Engineer Attachment URL': b.engineer_attachment_url,
+                'Customer Attachment URL': b.customer_attachment_url,
+                'Created At': b.created_at,
+                'Updated At': b.updated_at,
+              };
+              // Add any custom fields
+              Object.keys(b).forEach(key => {
+                if (key.startsWith('custom_field_')) {
+                  row[key.replace('custom_field_', 'Custom: ')] = b[key];
+                }
+              });
+              return row;
+            });
+            break;
+        }
     
-    const worksheet = XLSX.utils.json_to_sheet(exportData);
+        const worksheet = XLSX.utils.json_to_sheet(exportData);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
     
@@ -2511,8 +2561,9 @@ export default function AdminPage() {
                         <SelectItem value="products">Products Summary</SelectItem>
                         <SelectItem value="expedite">Expedite Requests</SelectItem>
                         <SelectItem value="revenue">Revenue Summary</SelectItem>
-                        <SelectItem value="user-activity">User Activity</SelectItem>
-                      </SelectContent>
+                                              <SelectItem value="user-activity">User Activity</SelectItem>
+                                              <SelectItem value="full-data-export">Full Data Export</SelectItem>
+                                            </SelectContent>
                     </Select>
                   </div>
                   <div className="space-y-2">
@@ -2531,8 +2582,8 @@ export default function AdminPage() {
                   </div>
                 </div>
 
-                {reportType === 'bookings' && (
-                  <div className="grid grid-cols-3 gap-4 p-4 bg-gray-50 rounded-lg">
+                                {(reportType === 'bookings' || reportType === 'full-data-export') && (
+                                  <div className="grid grid-cols-3 gap-4 p-4 bg-gray-50 rounded-lg">
                     <div className="space-y-2">
                       <Label>Product Filter</Label>
                       <Select value={reportProductFilter} onValueChange={setReportProductFilter}>
@@ -3137,19 +3188,21 @@ export default function AdminPage() {
                             <div className="space-y-2">
                               <Label>Trigger Type</Label>
                               <Select value={emailRuleTriggerType} onValueChange={setEmailRuleTriggerType}>
-                                <SelectTrigger>
-                                  <SelectValue />
-                                </SelectTrigger>
-                                                                                                                                <SelectContent>
-                                                                                                                                  <SelectItem value="time_before_booking">Time Before Booking</SelectItem>
-                                                                                                                                  <SelectItem value="time_after_booking_created">Time After Booking Created</SelectItem>
-                                                                                                                                  <SelectItem value="status_is">When Status Is</SelectItem>
-                                                                                                                                  <SelectItem value="note_added">When Note Added</SelectItem>
-                                                                                                                                  <SelectItem value="issue_reported">When Issue Reported</SelectItem>
-                                                                                                                                  <SelectItem value="expedite_approved">When Expedite Approved</SelectItem>
-                                                                                                                                  <SelectItem value="expedite_rejected">When Expedite Rejected</SelectItem>
-                                                                                                                                </SelectContent>
-                              </Select>
+                                                              <SelectTrigger>
+                                                                <SelectValue />
+                                                              </SelectTrigger>
+                                                              <SelectContent>
+                                                                <SelectItem value="time_before_booking">Time Before Booking</SelectItem>
+                                                                <SelectItem value="time_after_booking_created">Time After Booking Created</SelectItem>
+                                                                <SelectItem value="status_is">When Status Is</SelectItem>
+                                                                <SelectItem value="note_added">When Note Added</SelectItem>
+                                                                <SelectItem value="issue_reported">When Issue Reported</SelectItem>
+                                                                <SelectItem value="expedite_approved">When Expedite Approved</SelectItem>
+                                                                <SelectItem value="expedite_rejected">When Expedite Rejected</SelectItem>
+                                                                <SelectItem value="fee_approved">When Fee Approved</SelectItem>
+                                                                <SelectItem value="fee_rejected">When Fee Rejected</SelectItem>
+                                                              </SelectContent>
+                                                            </Select>
                             </div>
 
                             {(emailRuleTriggerType === 'time_before_booking' || emailRuleTriggerType === 'time_after_booking_created') && (
