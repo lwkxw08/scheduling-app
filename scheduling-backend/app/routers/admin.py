@@ -1950,7 +1950,8 @@ async def get_expedite_requests(
         selectinload(ExpediteRequest.requester),
         selectinload(ExpediteRequest.product),
         selectinload(ExpediteRequest.change_type),
-        selectinload(ExpediteRequest.assigned_engineer).selectinload(Engineer.user)
+        selectinload(ExpediteRequest.assigned_engineer).selectinload(Engineer.user),
+            selectinload(ExpediteRequest.assigned_engineer).selectinload(Engineer.schedules)
     ).order_by(ExpediteRequest.created_at.desc())
     
     if status_filter:
@@ -1976,7 +1977,8 @@ async def get_expedite_request(
             selectinload(ExpediteRequest.requester),
             selectinload(ExpediteRequest.product),
             selectinload(ExpediteRequest.change_type),
-            selectinload(ExpediteRequest.assigned_engineer).selectinload(Engineer.user)
+            selectinload(ExpediteRequest.assigned_engineer).selectinload(Engineer.user),
+            selectinload(ExpediteRequest.assigned_engineer).selectinload(Engineer.schedules)
         )
         .where(ExpediteRequest.id == request_id)
     )
@@ -2278,7 +2280,8 @@ async def get_expedite_requests_summary_report(
         selectinload(ExpediteRequest.requester),
         selectinload(ExpediteRequest.product),
         selectinload(ExpediteRequest.change_type),
-        selectinload(ExpediteRequest.assigned_engineer).selectinload(Engineer.user)
+        selectinload(ExpediteRequest.assigned_engineer).selectinload(Engineer.user),
+            selectinload(ExpediteRequest.assigned_engineer).selectinload(Engineer.schedules)
     )
     
     if start_date:
