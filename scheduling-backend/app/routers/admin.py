@@ -941,7 +941,7 @@ async def remove_booking_fee(
     return {"message": "Fee removed from booking"}
 
 
-@router.get("/fees/pending-approvals", response_model=List[BookingFeeResponse])
+@router.get("/fees/pending-approvals")
 async def get_pending_fee_approvals(
     authorization: str = Header(None),
     db: AsyncSession = Depends(get_db)
@@ -956,21 +956,73 @@ async def get_pending_fee_approvals(
     booking_fees = result.scalars().all()
     
     return [
-        BookingFeeResponse(
-            id=bf.id,
-            booking_id=bf.booking_id,
-            fee_id=bf.fee_id,
-            amount=bf.amount,
-            status=bf.status.value,
-            waived_by_id=bf.waived_by_id,
-            waiver_reason=bf.waiver_reason,
-            approved_by_id=bf.approved_by_id,
-            created_at=bf.created_at,
-            fee_name=bf.fee.name if bf.fee else None,
-            fee_type=bf.fee.fee_type if bf.fee else None
-        )
+        {
+            "id": bf.id,
+            "booking_id": bf.booking_id,
+            "fee_id": bf.fee_id,
+            "amount": bf.amount,
+            "status": bf.status.value,
+            "waived_by_id": bf.waived_by_id,
+            "waiver_reason": bf.waiver_reason,
+            "approved_by_id": bf.approved_by_id,
+            "created_at": bf.created_at,
+            "fee_name": bf.fee.name if bf.fee else None,
+            "fee_type": bf.fee.fee_type if bf.fee else None,
+            "order_reference": bf.booking.order_reference if bf.booking else None
+        }
         for bf in booking_fees
     ]
+
+
+@router.post("/booking-fees/{booking_fee_id}/approve")
+async def approve_booking_fee_by_id(
+    booking_fee_id: int,
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """Approve a pending fee by booking_fee_id"""
+    admin_user = await get_admin_user(authorization, db)
+    
+    result = await db.execute(
+        select(BookingFee).where(BookingFee.id == booking_fee_id)
+    )
+    booking_fee = result.scalar_one_or_none()
+    if not booking_fee:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking fee not found")
+    
+    if booking_fee.status != BookingFeeStatus.PENDING:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Fee is not pending approval")
+    
+    booking_fee.status = BookingFeeStatus.APPROVED
+    booking_fee.approved_by_id = admin_user.id
+    
+    await db.commit()
+    return {"message": "Fee approved successfully"}
+
+
+@router.post("/booking-fees/{booking_fee_id}/waive")
+async def waive_booking_fee_by_id(
+    booking_fee_id: int,
+    reason: str = None,
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """Waive a fee by booking_fee_id"""
+    admin_user = await get_admin_user(authorization, db)
+    
+    result = await db.execute(
+        select(BookingFee).where(BookingFee.id == booking_fee_id)
+    )
+    booking_fee = result.scalar_one_or_none()
+    if not booking_fee:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking fee not found")
+    
+    booking_fee.status = BookingFeeStatus.WAIVED
+    booking_fee.waived_by_id = admin_user.id
+    booking_fee.waiver_reason = reason
+    
+    await db.commit()
+    return {"message": "Fee waived successfully"}
 
 
 @router.get("/config", response_model=List[SystemConfigResponse])

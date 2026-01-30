@@ -1068,7 +1068,7 @@ export default function AdminPage() {
             case 'expedite_approved': return 'When Expedite Approved';
             case 'expedite_rejected': return 'When Expedite Rejected';
             case 'fee_approved': return 'When Fee Approved';
-            case 'fee_rejected': return 'When Fee Rejected';
+            case 'fee_waived': return 'When Fee Waived';
             default: return type;
           }
         };
@@ -2253,58 +2253,59 @@ export default function AdminPage() {
                   <CardDescription>Fees that require admin approval before being applied to bookings</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Booking</TableHead>
-                        <TableHead>Fee</TableHead>
-                        <TableHead>Amount</TableHead>
-                        <TableHead>Created</TableHead>
-                        <TableHead className="text-right">Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {pendingFeeApprovals.map((pf) => (
-                        <TableRow key={pf.id}>
-                          <TableCell>
-                            <div>
-                              <p className="font-medium">#{pf.booking_id}</p>
-                              {pf.order_reference && <p className="text-sm text-gray-500">{pf.order_reference}</p>}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div>
-                              <p className="font-medium">{pf.fee_name || 'Unknown Fee'}</p>
-                              {pf.fee_type && <p className="text-sm text-gray-500">{pf.fee_type}</p>}
-                            </div>
-                          </TableCell>
-                          <TableCell>£{pf.amount?.toFixed(2) || '0.00'}</TableCell>
-                          <TableCell>{pf.created_at ? new Date(pf.created_at).toLocaleDateString() : '-'}</TableCell>
-                          <TableCell className="text-right">
-                            <Button
-                              variant="default"
-                              size="sm"
-                              className="mr-2"
-                              onClick={() => handleApproveFee(pf.id)}
-                            >
-                              Approve
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => {
-                                setWaivingFeeId(pf.id);
-                                setWaiveReason('');
-                                setShowWaiveDialog(true);
-                              }}
-                            >
-                              Waive
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                                    <Table>
+                                      <TableHeader>
+                                        <TableRow>
+                                          <TableHead>Booking</TableHead>
+                                          <TableHead>Order Reference</TableHead>
+                                          <TableHead>Fee</TableHead>
+                                          <TableHead>Amount</TableHead>
+                                          <TableHead>Created</TableHead>
+                                          <TableHead className="text-right">Actions</TableHead>
+                                        </TableRow>
+                                      </TableHeader>
+                                      <TableBody>
+                                        {pendingFeeApprovals.map((pf) => (
+                                          <TableRow key={pf.id}>
+                                            <TableCell>
+                                              <p className="font-medium">#{pf.booking_id}</p>
+                                            </TableCell>
+                                            <TableCell>
+                                              <p className="font-medium">{pf.order_reference || '-'}</p>
+                                            </TableCell>
+                                            <TableCell>
+                                              <div>
+                                                <p className="font-medium">{pf.fee_name || 'Unknown Fee'}</p>
+                                                {pf.fee_type && <p className="text-sm text-gray-500">{pf.fee_type}</p>}
+                                              </div>
+                                            </TableCell>
+                                            <TableCell>£{pf.amount?.toFixed(2) || '0.00'}</TableCell>
+                                            <TableCell>{pf.created_at ? new Date(pf.created_at).toLocaleDateString() : '-'}</TableCell>
+                                            <TableCell className="text-right">
+                                              <Button
+                                                variant="default"
+                                                size="sm"
+                                                className="mr-2"
+                                                onClick={() => handleApproveFee(pf.id)}
+                                              >
+                                                Approve
+                                              </Button>
+                                              <Button
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={() => {
+                                                  setWaivingFeeId(pf.id);
+                                                  setWaiveReason('');
+                                                  setShowWaiveDialog(true);
+                                                }}
+                                              >
+                                                Waive
+                                              </Button>
+                                            </TableCell>
+                                          </TableRow>
+                                        ))}
+                                      </TableBody>
+                                    </Table>
                 </CardContent>
               </Card>
             )}
@@ -3199,8 +3200,8 @@ export default function AdminPage() {
                                                                 <SelectItem value="issue_reported">When Issue Reported</SelectItem>
                                                                 <SelectItem value="expedite_approved">When Expedite Approved</SelectItem>
                                                                 <SelectItem value="expedite_rejected">When Expedite Rejected</SelectItem>
-                                                                <SelectItem value="fee_approved">When Fee Approved</SelectItem>
-                                                                <SelectItem value="fee_rejected">When Fee Rejected</SelectItem>
+                                                                                                                                <SelectItem value="fee_approved">When Fee Approved</SelectItem>
+                                                                                                                                <SelectItem value="fee_waived">When Fee Waived</SelectItem>
                                                               </SelectContent>
                                                             </Select>
                             </div>
