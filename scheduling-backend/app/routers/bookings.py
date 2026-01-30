@@ -448,28 +448,28 @@ async def update_booking(
 ):
     user = await get_current_user(authorization, db)
     
-        result = await db.execute(
-            select(Booking)
-            .where(Booking.id == booking_id)
-            .options(
-                selectinload(Booking.engineer).selectinload(Engineer.user),
-                selectinload(Booking.product),
-                selectinload(Booking.change_type)
-            )
+    result = await db.execute(
+        select(Booking)
+        .where(Booking.id == booking_id)
+        .options(
+            selectinload(Booking.engineer).selectinload(Engineer.user),
+            selectinload(Booking.product),
+            selectinload(Booking.change_type)
         )
-        booking = result.scalar_one_or_none()
+    )
+    booking = result.scalar_one_or_none()
     
-        if not booking:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
+    if not booking:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
     
-        if user.role.value != "admin" and booking.booker_id != user.id:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    if user.role.value != "admin" and booking.booker_id != user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
     
-        if booking.status == BookingStatus.CANCELLED:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot update cancelled booking")
+    if booking.status == BookingStatus.CANCELLED:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot update cancelled booking")
     
-        # Use change type-specific amendment notice if set, otherwise use global setting
-        if booking.change_type and booking.change_type.amendment_notice_hours is not None:
+    # Use change type-specific amendment notice if set, otherwise use global setting
+    if booking.change_type and booking.change_type.amendment_notice_hours is not None:
         deadline_hours = booking.change_type.amendment_notice_hours
     else:
         deadline_hours = int(await get_config_value(db, "amendment_deadline_hours", "24"))
