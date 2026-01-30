@@ -1058,16 +1058,18 @@ export default function AdminPage() {
     }
   };
 
-  const getTriggerTypeLabel = (type: string) => {
-    switch (type) {
-      case 'time_before_booking': return 'Time Before Booking';
-      case 'time_after_booking_created': return 'Time After Booking Created';
-      case 'status_is': return 'When Status Is';
-      case 'note_added': return 'When Note Added';
-      case 'issue_reported': return 'When Issue Reported';
-      default: return type;
-    }
-  };
+    const getTriggerTypeLabel = (type: string) => {
+      switch (type) {
+        case 'time_before_booking': return 'Time Before Booking';
+        case 'time_after_booking_created': return 'Time After Booking Created';
+        case 'status_is': return 'When Status Is';
+        case 'note_added': return 'When Note Added';
+        case 'issue_reported': return 'When Issue Reported';
+        case 'expedite_approved': return 'When Expedite Approved';
+        case 'expedite_rejected': return 'When Expedite Rejected';
+        default: return type;
+      }
+    };
 
   // Expedite Request handlers
   const loadExpediteRequests = async () => {
@@ -3138,13 +3140,15 @@ export default function AdminPage() {
                                 <SelectTrigger>
                                   <SelectValue />
                                 </SelectTrigger>
-                                                                <SelectContent>
-                                                                  <SelectItem value="time_before_booking">Time Before Booking</SelectItem>
-                                                                  <SelectItem value="time_after_booking_created">Time After Booking Created</SelectItem>
-                                                                  <SelectItem value="status_is">When Status Is</SelectItem>
-                                                                  <SelectItem value="note_added">When Note Added</SelectItem>
-                                                                  <SelectItem value="issue_reported">When Issue Reported</SelectItem>
-                                                                </SelectContent>
+                                                                                                                                <SelectContent>
+                                                                                                                                  <SelectItem value="time_before_booking">Time Before Booking</SelectItem>
+                                                                                                                                  <SelectItem value="time_after_booking_created">Time After Booking Created</SelectItem>
+                                                                                                                                  <SelectItem value="status_is">When Status Is</SelectItem>
+                                                                                                                                  <SelectItem value="note_added">When Note Added</SelectItem>
+                                                                                                                                  <SelectItem value="issue_reported">When Issue Reported</SelectItem>
+                                                                                                                                  <SelectItem value="expedite_approved">When Expedite Approved</SelectItem>
+                                                                                                                                  <SelectItem value="expedite_rejected">When Expedite Rejected</SelectItem>
+                                                                                                                                </SelectContent>
                               </Select>
                             </div>
 
