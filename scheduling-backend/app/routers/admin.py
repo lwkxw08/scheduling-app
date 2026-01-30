@@ -2055,7 +2055,8 @@ async def approve_expedite_request(
             selectinload(ExpediteRequest.requester),
             selectinload(ExpediteRequest.product),
             selectinload(ExpediteRequest.change_type),
-            selectinload(ExpediteRequest.assigned_engineer).selectinload(Engineer.user)
+            selectinload(ExpediteRequest.assigned_engineer).selectinload(Engineer.user),
+            selectinload(ExpediteRequest.assigned_engineer).selectinload(Engineer.schedules)
         )
         .where(ExpediteRequest.id == request_id)
     )
