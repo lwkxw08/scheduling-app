@@ -782,9 +782,9 @@ class ApiService {
     return this.request<any[]>(`/admin/bookings/${bookingId}/fees`);
   }
 
-  async getPendingFeeApprovals() {
-    return this.request<any[]>('/admin/booking-fees/pending');
-  }
+    async getPendingFeeApprovals() {
+      return this.request<any[]>('/admin/fees/pending-approvals');
+    }
 
   async waiveBookingFee(bookingFeeId: number, reason?: string) {
     const params = reason ? `?reason=${encodeURIComponent(reason)}` : '';
