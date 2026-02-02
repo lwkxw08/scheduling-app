@@ -581,6 +581,30 @@ class ApiService {
     );
   }
 
+  async previewApplicableFees(data: {
+    product_id: number;
+    change_type_id: number;
+    scheduled_date: string;
+    duration_hours: number;
+  }) {
+    const params = new URLSearchParams();
+    params.append('product_id', data.product_id.toString());
+    params.append('change_type_id', data.change_type_id.toString());
+    params.append('scheduled_date', data.scheduled_date);
+    params.append('duration_hours', data.duration_hours.toString());
+    return this.request<{
+      fees: Array<{
+        fee_id: number | null;
+        name: string;
+        fee_type: string;
+        amount: number;
+        requires_approval: boolean;
+        is_per_hour: boolean;
+      }>;
+      total: number;
+    }>(`/bookings/preview-fees?${params.toString()}`, { method: 'POST' });
+  }
+
   // Admin Expedite Request Methods
   async getExpediteRequests(statusFilter?: string) {
     const params = statusFilter ? `?status_filter=${statusFilter}` : '';

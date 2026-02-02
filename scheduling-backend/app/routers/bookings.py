@@ -857,3 +857,123 @@ async def get_booking_settings(
     return {
         "booking_advance_limit_days": int(advance_limit) if advance_limit and advance_limit != "0" else 0
     }
+
+
+@router.post("/preview-fees")
+async def preview_applicable_fees(
+    product_id: int,
+    change_type_id: int,
+    scheduled_date: str,
+    duration_hours: float = 1.0,
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Preview what fees would apply to a booking without creating them.
+    Returns list of fees with their amounts and approval requirements.
+    """
+    await get_current_user(authorization, db)
+    
+    # Parse the scheduled date
+    try:
+        parsed_date = datetime.fromisoformat(scheduled_date.replace('Z', '+00:00'))
+    except ValueError:
+        parsed_date = datetime.strptime(scheduled_date, "%Y-%m-%dT%H:%M")
+    
+    # Get all active fees with their assignments
+    result = await db.execute(
+        select(Fee).where(Fee.is_active == True)
+        .options(
+            selectinload(Fee.product_assignments),
+            selectinload(Fee.change_type_assignments)
+        )
+    )
+    fees = result.scalars().all()
+    
+    # Get bank holidays for checking
+    holidays_result = await db.execute(select(BankHoliday))
+    bank_holidays = [h.date.date() for h in holidays_result.scalars().all()]
+    
+    applicable_fees = []
+    
+    for fee in fees:
+        should_apply = False
+        is_time_based_fee = False
+        
+        # Check if fee applies to this product
+        product_ids = [a.product_id for a in fee.product_assignments]
+        if product_id in product_ids:
+            should_apply = True
+        
+        # Check if fee applies to this change type
+        change_type_ids = [a.change_type_id for a in fee.change_type_assignments]
+        if change_type_id in change_type_ids:
+            should_apply = True
+        
+        # Check time-based conditions
+        # Check weekend condition
+        if fee.apply_on_weekends and parsed_date.weekday() >= 5:
+            should_apply = True
+            is_time_based_fee = True
+        
+        # Check bank holiday condition
+        if fee.apply_on_bank_holidays and parsed_date.date() in bank_holidays:
+            should_apply = True
+            is_time_based_fee = True
+        
+        # Check out-of-hours condition
+        if fee.apply_outside_hours and is_outside_working_hours(
+            parsed_date, fee.outside_hours_start, fee.outside_hours_end
+        ):
+            should_apply = True
+            is_time_based_fee = True
+        
+        if should_apply:
+            # Calculate the fee amount
+            fee_amount = fee.amount
+            
+            # If charge_per_hour is enabled, calculate based on duration
+            if getattr(fee, 'charge_per_hour', False) and fee.charge_per_hour:
+                if is_time_based_fee:
+                    qualifying_hours = calculate_out_of_hours_duration(
+                        parsed_date,
+                        duration_hours,
+                        fee.outside_hours_start,
+                        fee.outside_hours_end,
+                        bank_holidays,
+                        fee.apply_on_weekends,
+                        fee.apply_on_bank_holidays
+                    )
+                    fee_amount = fee.amount * qualifying_hours
+                else:
+                    fee_amount = fee.amount * duration_hours
+            
+            if fee_amount > 0:
+                applicable_fees.append({
+                    "fee_id": fee.id,
+                    "name": fee.name,
+                    "fee_type": fee.fee_type,
+                    "amount": fee_amount,
+                    "requires_approval": fee.apply_mode == FeeApplyMode.APPROVAL,
+                    "is_per_hour": getattr(fee, 'charge_per_hour', False) and fee.charge_per_hour
+                })
+    
+    # Also include the product's expedite fee if applicable
+    product_result = await db.execute(select(Product).where(Product.id == product_id))
+    product = product_result.scalar_one_or_none()
+    if product and product.expedite_fee and product.expedite_fee > 0:
+        applicable_fees.append({
+            "fee_id": None,
+            "name": f"{product.name} Expedite Fee",
+            "fee_type": "Expedite",
+            "amount": product.expedite_fee,
+            "requires_approval": False,
+            "is_per_hour": False
+        })
+    
+    total = sum(f["amount"] for f in applicable_fees)
+    
+    return {
+        "fees": applicable_fees,
+        "total": total
+    }

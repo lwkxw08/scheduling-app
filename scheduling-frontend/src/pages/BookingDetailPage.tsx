@@ -41,10 +41,19 @@ export default function BookingDetailPage() {
   const [isCheckingAvailability, setIsCheckingAvailability] = useState(false);
   const [showNoAvailabilityOptions, setShowNoAvailabilityOptions] = useState(false);
   const [showExpediteDialog, setShowExpediteDialog] = useState(false);
-  const [expediteFee, setExpediteFee] = useState<number>(0);
   const [expediteFeeAcknowledged, setExpediteFeeAcknowledged] = useState(false);
   const [isSubmittingExpedite, setIsSubmittingExpedite] = useState(false);
   const [expediteRequestedTime, setExpediteRequestedTime] = useState('09:00');
+  const [applicableFees, setApplicableFees] = useState<Array<{
+    fee_id: number | null;
+    name: string;
+    fee_type: string;
+    amount: number;
+    requires_approval: boolean;
+    is_per_hour: boolean;
+  }>>([]);
+  const [feesTotal, setFeesTotal] = useState<number>(0);
+  const [isLoadingFees, setIsLoadingFees] = useState(false);
     const [amendmentNotes, setAmendmentNotes] = useState('');
   
     // Reassign engineer state (admin only)
@@ -192,13 +201,6 @@ export default function BookingDetailPage() {
       if (response.engineers.length === 0 || !hasAvailableSlots) {
         setError('No engineers available for the selected date');
         setShowNoAvailabilityOptions(true);
-        // Fetch expedite fee for the product
-        try {
-          const feeData = await api.getProductExpediteFee(booking.product_id);
-          setExpediteFee(feeData.expedite_fee);
-        } catch {
-          setExpediteFee(0);
-        }
       } else {
         setAmendmentStep(2);
       }
@@ -237,9 +239,41 @@ export default function BookingDetailPage() {
     }
   };
 
+  const loadApplicableFees = async (requestedTime: string) => {
+    if (!booking || !amendmentDate) return;
+    
+    setIsLoadingFees(true);
+    try {
+      const requestedDateTime = `${amendmentDate}T${requestedTime}:00`;
+      
+      const result = await api.previewApplicableFees({
+        product_id: booking.product_id,
+        change_type_id: booking.change_type_id,
+        scheduled_date: requestedDateTime,
+        duration_hours: amendmentDuration || 1,
+      });
+      
+      setApplicableFees(result.fees);
+      setFeesTotal(result.total);
+    } catch (err) {
+      console.error('Failed to load applicable fees:', err);
+      setApplicableFees([]);
+      setFeesTotal(0);
+    } finally {
+      setIsLoadingFees(false);
+    }
+  };
+
+  const handleOpenExpediteDialog = async () => {
+    setExpediteRequestedTime('09:00');
+    setExpediteFeeAcknowledged(false);
+    setShowExpediteDialog(true);
+    await loadApplicableFees('09:00');
+  };
+
   const handleSubmitAmendmentExpedite = async () => {
     if (!booking || !expediteFeeAcknowledged) {
-      setError('Please acknowledge the expedite fee before submitting');
+      setError('Please acknowledge the fee total before submitting');
       return;
     }
 
@@ -730,11 +764,7 @@ export default function BookingDetailPage() {
                         Would you like to submit a special resourcing request for this date and time? Additional fees may apply
                       </p>
                       <Button
-                        onClick={() => {
-                          setExpediteRequestedTime('09:00');
-                          setExpediteFeeAcknowledged(false);
-                          setShowExpediteDialog(true);
-                        }}
+                        onClick={handleOpenExpediteDialog}
                         className="bg-amber-600 hover:bg-amber-700"
                       >
                         Submit Request
@@ -940,24 +970,45 @@ export default function BookingDetailPage() {
               <Input
                 type="time"
                 value={expediteRequestedTime}
-                onChange={(e) => setExpediteRequestedTime(e.target.value)}
+                onChange={(e) => {
+                  setExpediteRequestedTime(e.target.value);
+                  loadApplicableFees(e.target.value);
+                }}
               />
               <p className="text-xs text-gray-500">Select your preferred start time for this booking</p>
             </div>
 
-            {expediteFee > 0 && (
-              <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
-                <div className="flex items-start gap-3">
-                  <AlertCircle className="w-5 h-5 text-amber-600 mt-0.5" />
-                  <div>
-                    <h4 className="font-medium text-amber-800">Expedite Fee: £{expediteFee.toFixed(2)}</h4>
-                    <p className="text-sm text-amber-700 mt-1">
-                      An expedite fee applies to this request. By submitting, you acknowledge and accept this fee.
-                    </p>
+            <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
+              <h4 className="font-medium text-amber-800 mb-3">Applicable Fees</h4>
+              {isLoadingFees ? (
+                <div className="flex items-center gap-2 text-amber-700">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span className="text-sm">Loading fees...</span>
+                </div>
+              ) : applicableFees.length > 0 ? (
+                <div className="space-y-2">
+                  {applicableFees.map((fee, index) => (
+                    <div key={index} className="flex justify-between items-center text-sm">
+                      <span className="text-amber-700">
+                        {fee.name}
+                        {fee.requires_approval && (
+                          <span className="ml-2 text-xs bg-amber-200 text-amber-800 px-2 py-0.5 rounded">
+                            Requires Approval
+                          </span>
+                        )}
+                      </span>
+                      <span className="font-medium text-amber-800">£{fee.amount.toFixed(2)}</span>
+                    </div>
+                  ))}
+                  <div className="border-t border-amber-300 pt-2 mt-2 flex justify-between items-center">
+                    <span className="font-medium text-amber-800">Total</span>
+                    <span className="font-bold text-amber-900">£{feesTotal.toFixed(2)}</span>
                   </div>
                 </div>
-              </div>
-            )}
+              ) : (
+                <p className="text-sm text-amber-700">No additional fees apply to this request.</p>
+              )}
+            </div>
 
             <div className="flex items-center space-x-2">
               <Checkbox
@@ -966,9 +1017,9 @@ export default function BookingDetailPage() {
                 onCheckedChange={(checked) => setExpediteFeeAcknowledged(checked as boolean)}
               />
               <Label htmlFor="feeAcknowledged" className="text-sm">
-                {expediteFee > 0 
-                  ? `I acknowledge and accept the expedite fee of £${expediteFee.toFixed(2)}`
-                  : 'I understand this is an expedite request and will be reviewed by an administrator'
+                {feesTotal > 0 
+                  ? `I acknowledge and accept the fee total of £${feesTotal.toFixed(2)}`
+                  : 'I understand this is a special resourcing request and will be reviewed by an administrator'
                 }
               </Label>
             </div>
