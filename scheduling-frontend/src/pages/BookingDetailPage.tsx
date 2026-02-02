@@ -727,10 +727,7 @@ export default function BookingDetailPage() {
                     <div className="mt-4 p-4 bg-white rounded-lg border border-gray-200">
                       <h4 className="font-medium text-gray-900 mb-2">No availability found</h4>
                       <p className="text-sm text-gray-600 mb-4">
-                        Would you like to submit an expedite request for this date and time? 
-                        {expediteFee > 0 && (
-                          <span className="font-medium"> An expedite fee of £{expediteFee.toFixed(2)} applies.</span>
-                        )}
+                        Would you like to submit a special resourcing request for this date and time? Additional fees may apply
                       </p>
                       <Button
                         onClick={() => {
@@ -740,7 +737,7 @@ export default function BookingDetailPage() {
                         }}
                         className="bg-amber-600 hover:bg-amber-700"
                       >
-                        Submit Expedite Request
+                        Submit Request
                       </Button>
                     </div>
                   )}
@@ -913,9 +910,9 @@ export default function BookingDetailPage() {
       <Dialog open={showExpediteDialog} onOpenChange={setShowExpediteDialog}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Submit Amendment Expedite Request</DialogTitle>
+            <DialogTitle>Submit Special Resourcing Request</DialogTitle>
             <DialogDescription>
-              Request an expedited amendment for {amendmentDate}. Your request will be reviewed by an administrator.
+              Request special resourcing for {amendmentDate}. Your request will be reviewed by an administrator.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -991,7 +988,7 @@ export default function BookingDetailPage() {
                   Submitting...
                 </>
               ) : (
-                'Submit Expedite Request'
+                'Submit Request'
               )}
             </Button>
           </DialogFooter>
