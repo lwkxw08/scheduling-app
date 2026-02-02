@@ -80,6 +80,7 @@ export default function AdminPage() {
   const [feeApplyOutsideHours, setFeeApplyOutsideHours] = useState(false);
   const [feeOutsideHoursStart, setFeeOutsideHoursStart] = useState('09:00');
   const [feeOutsideHoursEnd, setFeeOutsideHoursEnd] = useState('17:00');
+  const [feeChargePerHour, setFeeChargePerHour] = useState(false);
   const [bankHolidays, setBankHolidays] = useState<any[]>([]);
   const [showBankHolidayDialog, setShowBankHolidayDialog] = useState(false);
   const [bankHolidayName, setBankHolidayName] = useState('');
@@ -470,6 +471,7 @@ export default function AdminPage() {
         apply_outside_hours: feeApplyOutsideHours,
         outside_hours_start: feeApplyOutsideHours ? feeOutsideHoursStart : undefined,
         outside_hours_end: feeApplyOutsideHours ? feeOutsideHoursEnd : undefined,
+        charge_per_hour: feeChargePerHour,
       };
       
       if (editingFee) {
@@ -491,13 +493,14 @@ export default function AdminPage() {
       setFeeApplyOutsideHours(false);
       setFeeOutsideHoursStart('09:00');
       setFeeOutsideHoursEnd('17:00');
+      setFeeChargePerHour(false);
       loadAllData();
     } catch (err: any) {
       setError(err.message);
     }
   };
 
-  const loadBankHolidays = async () => {
+  const loadBankHolidays= async () => {
     try {
       const data = await api.getBankHolidays();
       setBankHolidays(data);
@@ -1995,7 +1998,7 @@ export default function AdminPage() {
                 </div>
                 <Dialog open={showFeeDialog} onOpenChange={setShowFeeDialog}>
                   <DialogTrigger asChild>
-                    <Button onClick={() => { setEditingFee(null); setFeeName(''); setFeeType(''); setFeeAmount(''); setFeeDescription(''); setFeeApplyMode('auto'); setFeeProductIds([]); setFeeChangeTypeIds([]); setFeeApplyOnWeekends(false); setFeeApplyOnBankHolidays(false); setFeeApplyOutsideHours(false); setFeeOutsideHoursStart('09:00'); setFeeOutsideHoursEnd('17:00'); }}>
+                    <Button onClick={() => { setEditingFee(null); setFeeName(''); setFeeType(''); setFeeAmount(''); setFeeDescription(''); setFeeApplyMode('auto'); setFeeProductIds([]); setFeeChangeTypeIds([]); setFeeApplyOnWeekends(false); setFeeApplyOnBankHolidays(false); setFeeApplyOutsideHours(false); setFeeOutsideHoursStart('09:00'); setFeeOutsideHoursEnd('17:00'); setFeeChargePerHour(false); }}>
                       <Plus className="w-4 h-4 mr-2" />
                       Add Fee
                     </Button>
@@ -2147,6 +2150,19 @@ export default function AdminPage() {
                               </p>
                             </div>
                           )}
+                          <div className="flex items-center space-x-2 mt-4 pt-4 border-t">
+                            <Checkbox
+                              id="fee-charge-per-hour"
+                              checked={feeChargePerHour}
+                              onCheckedChange={(checked) => setFeeChargePerHour(checked as boolean)}
+                            />
+                            <label htmlFor="fee-charge-per-hour" className="text-sm">Charge Per Hour</label>
+                          </div>
+                          {feeChargePerHour && (
+                            <p className="ml-6 text-xs text-gray-500">
+                              Fee will be calculated as: Amount x Booking Duration Hours. For time-based fees (weekends, bank holidays, out-of-hours), only the qualifying hours will be charged.
+                            </p>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -2221,6 +2237,7 @@ export default function AdminPage() {
                               setFeeApplyOutsideHours(fee.apply_outside_hours || false);
                               setFeeOutsideHoursStart(fee.outside_hours_start || '09:00');
                               setFeeOutsideHoursEnd(fee.outside_hours_end || '17:00');
+                              setFeeChargePerHour(fee.charge_per_hour || false);
                               setShowFeeDialog(true);
                             }}
                           >

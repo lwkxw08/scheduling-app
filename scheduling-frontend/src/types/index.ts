@@ -130,6 +130,7 @@ export interface Fee {
   apply_outside_hours: boolean;
   outside_hours_start: string | null;
   outside_hours_end: string | null;
+  charge_per_hour: boolean;
 }
 
 export interface BankHoliday {

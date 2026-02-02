@@ -301,6 +301,7 @@ class FeeCreate(BaseModel):
     apply_outside_hours: bool = False
     outside_hours_start: Optional[str] = None  # e.g., "09:00"
     outside_hours_end: Optional[str] = None  # e.g., "17:00"
+    charge_per_hour: bool = False  # If true, amount is per hour
 
 
 class FeeUpdate(BaseModel):
@@ -317,6 +318,7 @@ class FeeUpdate(BaseModel):
     apply_outside_hours: Optional[bool] = None
     outside_hours_start: Optional[str] = None
     outside_hours_end: Optional[str] = None
+    charge_per_hour: Optional[bool] = None
 
 
 class FeeResponse(BaseModel):
@@ -336,6 +338,7 @@ class FeeResponse(BaseModel):
     apply_outside_hours: bool = False
     outside_hours_start: Optional[str] = None
     outside_hours_end: Optional[str] = None
+    charge_per_hour: bool = False
 
     class Config:
         from_attributes = True

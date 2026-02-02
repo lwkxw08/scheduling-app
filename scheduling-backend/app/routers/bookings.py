@@ -104,16 +104,81 @@ def is_outside_working_hours(scheduled_time: datetime, start_time: str, end_time
         return False
 
 
+def calculate_out_of_hours_duration(
+    scheduled_date: datetime,
+    duration_hours: float,
+    start_time: str,
+    end_time: str,
+    bank_holidays: list = None,
+    apply_on_weekends: bool = False,
+    apply_on_bank_holidays: bool = False
+) -> float:
+    """
+    Calculate how many hours of a booking fall outside business hours,
+    on weekends, or on bank holidays.
+    
+    Returns the number of hours that qualify for the out-of-hours fee.
+    """
+    if not start_time or not end_time:
+        return 0.0
+    
+    try:
+        start_hour, start_min = map(int, start_time.split(':'))
+        end_hour, end_min = map(int, end_time.split(':'))
+        
+        # Convert working hours to minutes from midnight
+        work_start_minutes = start_hour * 60 + start_min
+        work_end_minutes = end_hour * 60 + end_min
+        
+        out_of_hours_total = 0.0
+        
+        # Process each hour of the booking
+        current_time = scheduled_date
+        remaining_hours = duration_hours
+        
+        while remaining_hours > 0:
+            # Determine how much of this hour to process
+            hour_portion = min(1.0, remaining_hours)
+            is_out_of_hours = False
+            
+            # Check if this hour is on a weekend
+            if apply_on_weekends and current_time.weekday() >= 5:  # Saturday=5, Sunday=6
+                is_out_of_hours = True
+            
+            # Check if this hour is on a bank holiday
+            if apply_on_bank_holidays and bank_holidays and current_time.date() in bank_holidays:
+                is_out_of_hours = True
+            
+            # Check if this hour is outside working hours (only if not already flagged)
+            if not is_out_of_hours:
+                current_minutes = current_time.hour * 60 + current_time.minute
+                if current_minutes < work_start_minutes or current_minutes >= work_end_minutes:
+                    is_out_of_hours = True
+            
+            if is_out_of_hours:
+                out_of_hours_total += hour_portion
+            
+            # Move to next hour
+            current_time = current_time + timedelta(hours=1)
+            remaining_hours -= 1.0
+        
+        return out_of_hours_total
+    except (ValueError, AttributeError):
+        return 0.0
+
+
 async def apply_fees_to_booking(
     db: AsyncSession,
     booking_id: int,
     product_id: int,
     change_type_id: int,
-    scheduled_date: datetime = None
+    scheduled_date: datetime = None,
+    duration_hours: float = 1.0
 ) -> List[BookingFee]:
     """
     Apply fees to a booking based on product and change type assignments,
     as well as time-based conditions (weekends, bank holidays, out-of-hours).
+    Supports per-hour fee calculation for time-based fees.
     Returns list of BookingFee objects created.
     """
     applied_fees = []
@@ -136,6 +201,7 @@ async def apply_fees_to_booking(
     
     for fee in fees:
         should_apply = False
+        is_time_based_fee = False  # Track if this is a time-based fee (weekends, holidays, out-of-hours)
         
         # Check if fee applies to this product
         product_ids = [a.product_id for a in fee.product_assignments]
@@ -152,31 +218,57 @@ async def apply_fees_to_booking(
             # Check weekend condition
             if fee.apply_on_weekends and scheduled_date.weekday() >= 5:  # Saturday=5, Sunday=6
                 should_apply = True
+                is_time_based_fee = True
             
             # Check bank holiday condition
             if fee.apply_on_bank_holidays and scheduled_date.date() in bank_holidays:
                 should_apply = True
+                is_time_based_fee = True
             
             # Check out-of-hours condition
             if fee.apply_outside_hours and is_outside_working_hours(
                 scheduled_date, fee.outside_hours_start, fee.outside_hours_end
             ):
                 should_apply = True
+                is_time_based_fee = True
         
         if should_apply:
-            # Determine status based on apply_mode
-            fee_status = BookingFeeStatus.APPROVED
-            if fee.apply_mode == FeeApplyMode.APPROVAL:
-                fee_status = BookingFeeStatus.PENDING
+            # Calculate the fee amount
+            fee_amount = fee.amount
             
-            booking_fee = BookingFee(
-                booking_id=booking_id,
-                fee_id=fee.id,
-                amount=fee.amount,
-                status=fee_status
-            )
-            db.add(booking_fee)
-            applied_fees.append(booking_fee)
+            # If charge_per_hour is enabled, calculate based on duration
+            if getattr(fee, 'charge_per_hour', False) and fee.charge_per_hour:
+                if is_time_based_fee and scheduled_date:
+                    # For time-based fees, calculate how many hours qualify
+                    qualifying_hours = calculate_out_of_hours_duration(
+                        scheduled_date,
+                        duration_hours,
+                        fee.outside_hours_start,
+                        fee.outside_hours_end,
+                        bank_holidays,
+                        fee.apply_on_weekends,
+                        fee.apply_on_bank_holidays
+                    )
+                    fee_amount = fee.amount * qualifying_hours
+                else:
+                    # For product/change type fees, charge for full duration
+                    fee_amount = fee.amount * duration_hours
+            
+            # Only apply fee if amount is greater than 0
+            if fee_amount > 0:
+                # Determine status based on apply_mode
+                fee_status = BookingFeeStatus.APPROVED
+                if fee.apply_mode == FeeApplyMode.APPROVAL:
+                    fee_status = BookingFeeStatus.PENDING
+                
+                booking_fee = BookingFee(
+                    booking_id=booking_id,
+                    fee_id=fee.id,
+                    amount=fee_amount,
+                    status=fee_status
+                )
+                db.add(booking_fee)
+                applied_fees.append(booking_fee)
     
     if applied_fees:
         await db.commit()
@@ -289,7 +381,8 @@ async def create_booking(
         new_booking.id,
         booking_data.product_id,
         booking_data.change_type_id,
-        booking_data.scheduled_date
+        booking_data.scheduled_date,
+        booking_data.duration_hours
     )
     
     if admin_token and engineer.calendar_email:

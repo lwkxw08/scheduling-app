@@ -211,6 +211,7 @@ class Fee(Base):
     apply_outside_hours = Column(Boolean, default=False)  # Apply if booking is outside working hours
     outside_hours_start = Column(String(5), nullable=True)  # e.g., "09:00" - start of working hours
     outside_hours_end = Column(String(5), nullable=True)  # e.g., "17:00" - end of working hours
+    charge_per_hour = Column(Boolean, default=False)  # If true, amount is per hour; total = amount * hours
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

@@ -660,7 +660,8 @@ async def create_fee(
         apply_on_bank_holidays=fee_data.apply_on_bank_holidays,
         apply_outside_hours=fee_data.apply_outside_hours,
         outside_hours_start=fee_data.outside_hours_start,
-        outside_hours_end=fee_data.outside_hours_end
+        outside_hours_end=fee_data.outside_hours_end,
+        charge_per_hour=fee_data.charge_per_hour
     )
     db.add(fee)
     await db.commit()
@@ -702,7 +703,8 @@ async def create_fee(
         apply_on_bank_holidays=fee.apply_on_bank_holidays or False,
         apply_outside_hours=fee.apply_outside_hours or False,
         outside_hours_start=fee.outside_hours_start,
-        outside_hours_end=fee.outside_hours_end
+        outside_hours_end=fee.outside_hours_end,
+        charge_per_hour=fee.charge_per_hour or False
     )
 
 
@@ -735,7 +737,8 @@ async def get_fees(
             apply_on_bank_holidays=f.apply_on_bank_holidays or False,
             apply_outside_hours=f.apply_outside_hours or False,
             outside_hours_start=f.outside_hours_start,
-            outside_hours_end=f.outside_hours_end
+            outside_hours_end=f.outside_hours_end,
+            charge_per_hour=f.charge_per_hour or False
         )
         for f in fees
     ]
@@ -780,6 +783,8 @@ async def update_fee(
         fee.outside_hours_start = fee_data.outside_hours_start
     if fee_data.outside_hours_end is not None:
         fee.outside_hours_end = fee_data.outside_hours_end
+    if fee_data.charge_per_hour is not None:
+        fee.charge_per_hour = fee_data.charge_per_hour
     
     # Update product assignments if provided
     if fee_data.product_ids is not None:
