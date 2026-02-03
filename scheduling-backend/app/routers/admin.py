@@ -3143,3 +3143,642 @@ async def reopen_issue(
     await db.commit()
     
     return {"message": "Issue reopened"}
+
+
+@router.get("/export-data")
+async def export_all_data(
+    secret_key: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """Export all data for migration purposes. Requires secret key."""
+    import os
+    expected_key = os.getenv("ADMIN_SETUP_KEY", "scheduling-app-admin-setup-2024")
+    
+    if secret_key != expected_key:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid secret key"
+        )
+    
+    # Export all data
+    data = {}
+    
+    # Users
+    result = await db.execute(select(User))
+    users = result.scalars().all()
+    data["users"] = [
+        {
+            "id": u.id,
+            "email": u.email,
+            "full_name": u.full_name,
+            "phone": u.phone,
+            "role": u.role.value,
+            "is_active": u.is_active,
+            "microsoft_id": u.microsoft_id,
+            "created_at": u.created_at.isoformat() if u.created_at else None,
+            "last_login_at": u.last_login_at.isoformat() if u.last_login_at else None
+        }
+        for u in users
+    ]
+    
+    # Products
+    result = await db.execute(select(Product).where(Product.is_active == True))
+    products = result.scalars().all()
+    data["products"] = [
+        {
+            "id": p.id,
+            "name": p.name,
+            "description": p.description,
+            "expedite_fee": p.expedite_fee,
+            "expedite_contact_emails": p.expedite_contact_emails
+        }
+        for p in products
+    ]
+    
+    # Change Types
+    result = await db.execute(select(ChangeType).where(ChangeType.is_active == True))
+    change_types = result.scalars().all()
+    data["change_types"] = [
+        {
+            "id": ct.id,
+            "name": ct.name,
+            "description": ct.description,
+            "minimum_notice_hours": ct.minimum_notice_hours,
+            "cancellation_notice_hours": ct.cancellation_notice_hours,
+            "amendment_notice_hours": ct.amendment_notice_hours
+        }
+        for ct in change_types
+    ]
+    
+    # Engineers
+    result = await db.execute(
+        select(Engineer).options(
+            selectinload(Engineer.user),
+            selectinload(Engineer.skills)
+        )
+    )
+    engineers = result.scalars().all()
+    data["engineers"] = [
+        {
+            "id": e.id,
+            "user_id": e.user_id,
+            "user_email": e.user.email if e.user else None,
+            "calendar_email": e.calendar_email,
+            "is_available": e.is_available,
+            "working_hours_start": e.working_hours_start,
+            "working_hours_end": e.working_hours_end,
+            "skills": [
+                {
+                    "product_id": s.product_id,
+                    "change_type_id": s.change_type_id,
+                    "proficiency_level": s.proficiency_level
+                }
+                for s in e.skills
+            ]
+        }
+        for e in engineers
+    ]
+    
+    # Fees
+    result = await db.execute(
+        select(Fee).where(Fee.is_active == True).options(
+            selectinload(Fee.product_assignments),
+            selectinload(Fee.change_type_assignments)
+        )
+    )
+    fees = result.scalars().all()
+    data["fees"] = [
+        {
+            "id": f.id,
+            "name": f.name,
+            "description": f.description,
+            "amount": f.amount,
+            "category": f.category,
+            "apply_mode": f.apply_mode.value if f.apply_mode else "all",
+            "requires_approval": f.requires_approval,
+            "apply_on_weekends": f.apply_on_weekends,
+            "apply_on_bank_holidays": f.apply_on_bank_holidays,
+            "apply_out_of_hours": f.apply_out_of_hours,
+            "charge_per_hour": f.charge_per_hour,
+            "product_ids": [pa.product_id for pa in f.product_assignments],
+            "change_type_ids": [cta.change_type_id for cta in f.change_type_assignments]
+        }
+        for f in fees
+    ]
+    
+    # System Config
+    result = await db.execute(select(SystemConfig))
+    configs = result.scalars().all()
+    data["system_config"] = {c.key: c.value for c in configs}
+    
+    # Email Templates
+    result = await db.execute(select(EmailTemplate))
+    templates = result.scalars().all()
+    data["email_templates"] = [
+        {
+            "id": t.id,
+            "name": t.name,
+            "template_type": t.template_type.value,
+            "subject": t.subject,
+            "body": t.body,
+            "is_active": t.is_active
+        }
+        for t in templates
+    ]
+    
+    # Calendar Templates
+    result = await db.execute(select(CalendarEventTemplate))
+    cal_templates = result.scalars().all()
+    data["calendar_templates"] = [
+        {
+            "id": t.id,
+            "name": t.name,
+            "template_type": t.template_type.value,
+            "title_template": t.title_template,
+            "description_template": t.description_template,
+            "is_active": t.is_active
+        }
+        for t in cal_templates
+    ]
+    
+    # Bank Holidays
+    result = await db.execute(select(BankHoliday))
+    holidays = result.scalars().all()
+    data["bank_holidays"] = [
+        {
+            "id": h.id,
+            "name": h.name,
+            "date": h.date.isoformat() if h.date else None
+        }
+        for h in holidays
+    ]
+    
+    # Custom Fields
+    result = await db.execute(select(CustomField).where(CustomField.is_active == True))
+    fields = result.scalars().all()
+    data["custom_fields"] = [
+        {
+            "id": f.id,
+            "name": f.name,
+            "field_type": f.field_type,
+            "is_required": f.is_required,
+            "options": f.options
+        }
+        for f in fields
+    ]
+    
+    # Email Rules
+    result = await db.execute(select(EmailRule))
+    rules = result.scalars().all()
+    data["email_rules"] = [
+        {
+            "id": r.id,
+            "name": r.name,
+            "description": r.description,
+            "trigger_type": r.trigger_type.value,
+            "trigger_hours_before": r.trigger_hours_before,
+            "recipient_type": r.recipient_type.value,
+            "email_template_id": r.email_template_id,
+            "is_active": r.is_active
+        }
+        for r in rules
+    ]
+    
+    # Roster Patterns
+    result = await db.execute(
+        select(RosterPattern).options(selectinload(RosterPattern.phases))
+    )
+    patterns = result.scalars().all()
+    data["roster_patterns"] = [
+        {
+            "id": p.id,
+            "name": p.name,
+            "description": p.description,
+            "phases": [
+                {
+                    "phase_order": ph.phase_order,
+                    "days_on": ph.days_on,
+                    "days_off": ph.days_off,
+                    "start_time": ph.start_time,
+                    "end_time": ph.end_time
+                }
+                for ph in p.phases
+            ]
+        }
+        for p in patterns
+    ]
+    
+    # Bookings
+    result = await db.execute(
+        select(Booking).options(
+            selectinload(Booking.product),
+            selectinload(Booking.change_type),
+            selectinload(Booking.engineer),
+            selectinload(Booking.booker)
+        )
+    )
+    bookings = result.scalars().all()
+    data["bookings"] = [
+        {
+            "id": b.id,
+            "reference_number": b.reference_number,
+            "product_id": b.product_id,
+            "change_type_id": b.change_type_id,
+            "engineer_id": b.engineer_id,
+            "booker_id": b.booker_id,
+            "booker_email": b.booker.email if b.booker else None,
+            "scheduled_date": b.scheduled_date.isoformat() if b.scheduled_date else None,
+            "scheduled_time": b.scheduled_time,
+            "duration_hours": b.duration_hours,
+            "status": b.status.value,
+            "notes": b.notes,
+            "custom_field_values": b.custom_field_values,
+            "created_at": b.created_at.isoformat() if b.created_at else None
+        }
+        for b in bookings
+    ]
+    
+    return data
+
+
+@router.post("/import-data")
+async def import_all_data(
+    secret_key: str,
+    import_data: dict,
+    db: AsyncSession = Depends(get_db)
+):
+    """Import data from another instance. Requires secret key."""
+    import os
+    expected_key = os.getenv("ADMIN_SETUP_KEY", "scheduling-app-admin-setup-2024")
+    
+    if secret_key != expected_key:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid secret key"
+        )
+    
+    results = {
+        "users": 0,
+        "products": 0,
+        "change_types": 0,
+        "engineers": 0,
+        "fees": 0,
+        "system_config": 0,
+        "email_templates": 0,
+        "calendar_templates": 0,
+        "bank_holidays": 0,
+        "custom_fields": 0,
+        "email_rules": 0,
+        "roster_patterns": 0,
+        "errors": []
+    }
+    
+    # ID mappings for foreign keys
+    user_mapping = {}
+    product_mapping = {}
+    change_type_mapping = {}
+    engineer_mapping = {}
+    email_template_mapping = {}
+    
+    # Import Users
+    for user_data in import_data.get("users", []):
+        try:
+            # Check if user already exists
+            existing = await db.execute(select(User).where(User.email == user_data["email"]))
+            existing_user = existing.scalar_one_or_none()
+            
+            if existing_user:
+                user_mapping[user_data["id"]] = existing_user.id
+                continue
+            
+            user = User(
+                email=user_data["email"],
+                full_name=user_data.get("full_name", ""),
+                phone=user_data.get("phone"),
+                role=UserRole(user_data.get("role", "user")),
+                is_active=user_data.get("is_active", True),
+                microsoft_id=user_data.get("microsoft_id")
+            )
+            db.add(user)
+            await db.flush()
+            user_mapping[user_data["id"]] = user.id
+            results["users"] += 1
+        except Exception as e:
+            results["errors"].append(f"User {user_data.get('email')}: {str(e)}")
+    
+    # Import Products
+    for prod_data in import_data.get("products", []):
+        try:
+            existing = await db.execute(select(Product).where(Product.name == prod_data["name"]))
+            existing_prod = existing.scalar_one_or_none()
+            
+            if existing_prod:
+                product_mapping[prod_data["id"]] = existing_prod.id
+                continue
+            
+            product = Product(
+                name=prod_data["name"],
+                description=prod_data.get("description", ""),
+                expedite_fee=prod_data.get("expedite_fee", 0),
+                expedite_contact_emails=prod_data.get("expedite_contact_emails")
+            )
+            db.add(product)
+            await db.flush()
+            product_mapping[prod_data["id"]] = product.id
+            results["products"] += 1
+        except Exception as e:
+            results["errors"].append(f"Product {prod_data.get('name')}: {str(e)}")
+    
+    # Import Change Types
+    for ct_data in import_data.get("change_types", []):
+        try:
+            existing = await db.execute(select(ChangeType).where(ChangeType.name == ct_data["name"]))
+            existing_ct = existing.scalar_one_or_none()
+            
+            if existing_ct:
+                change_type_mapping[ct_data["id"]] = existing_ct.id
+                continue
+            
+            change_type = ChangeType(
+                name=ct_data["name"],
+                description=ct_data.get("description", ""),
+                minimum_notice_hours=ct_data.get("minimum_notice_hours", 0),
+                cancellation_notice_hours=ct_data.get("cancellation_notice_hours"),
+                amendment_notice_hours=ct_data.get("amendment_notice_hours")
+            )
+            db.add(change_type)
+            await db.flush()
+            change_type_mapping[ct_data["id"]] = change_type.id
+            results["change_types"] += 1
+        except Exception as e:
+            results["errors"].append(f"ChangeType {ct_data.get('name')}: {str(e)}")
+    
+    # Import System Config
+    for key, value in import_data.get("system_config", {}).items():
+        try:
+            existing = await db.execute(select(SystemConfig).where(SystemConfig.key == key))
+            config = existing.scalar_one_or_none()
+            
+            if config:
+                config.value = str(value) if value is not None else ""
+            else:
+                config = SystemConfig(key=key, value=str(value) if value is not None else "")
+                db.add(config)
+            results["system_config"] += 1
+        except Exception as e:
+            results["errors"].append(f"SystemConfig {key}: {str(e)}")
+    
+    # Import Bank Holidays
+    for holiday_data in import_data.get("bank_holidays", []):
+        try:
+            from datetime import date
+            holiday_date = date.fromisoformat(holiday_data["date"]) if holiday_data.get("date") else None
+            
+            existing = await db.execute(
+                select(BankHoliday).where(
+                    BankHoliday.name == holiday_data["name"],
+                    BankHoliday.date == holiday_date
+                )
+            )
+            if existing.scalar_one_or_none():
+                continue
+            
+            holiday = BankHoliday(
+                name=holiday_data["name"],
+                date=holiday_date
+            )
+            db.add(holiday)
+            results["bank_holidays"] += 1
+        except Exception as e:
+            results["errors"].append(f"BankHoliday {holiday_data.get('name')}: {str(e)}")
+    
+    # Import Custom Fields
+    for field_data in import_data.get("custom_fields", []):
+        try:
+            existing = await db.execute(select(CustomField).where(CustomField.name == field_data["name"]))
+            if existing.scalar_one_or_none():
+                continue
+            
+            field = CustomField(
+                name=field_data["name"],
+                field_type=field_data["field_type"],
+                is_required=field_data.get("is_required", False),
+                options=field_data.get("options")
+            )
+            db.add(field)
+            results["custom_fields"] += 1
+        except Exception as e:
+            results["errors"].append(f"CustomField {field_data.get('name')}: {str(e)}")
+    
+    # Import Email Templates
+    for template_data in import_data.get("email_templates", []):
+        try:
+            existing = await db.execute(select(EmailTemplate).where(EmailTemplate.name == template_data["name"]))
+            existing_template = existing.scalar_one_or_none()
+            
+            if existing_template:
+                email_template_mapping[template_data["id"]] = existing_template.id
+                continue
+            
+            template = EmailTemplate(
+                name=template_data["name"],
+                template_type=TemplateType(template_data["template_type"]),
+                subject=template_data["subject"],
+                body=template_data["body"],
+                is_active=template_data.get("is_active", True)
+            )
+            db.add(template)
+            await db.flush()
+            email_template_mapping[template_data["id"]] = template.id
+            results["email_templates"] += 1
+        except Exception as e:
+            results["errors"].append(f"EmailTemplate {template_data.get('name')}: {str(e)}")
+    
+    # Import Calendar Templates
+    for template_data in import_data.get("calendar_templates", []):
+        try:
+            existing = await db.execute(select(CalendarEventTemplate).where(CalendarEventTemplate.name == template_data["name"]))
+            if existing.scalar_one_or_none():
+                continue
+            
+            template = CalendarEventTemplate(
+                name=template_data["name"],
+                template_type=TemplateType(template_data["template_type"]),
+                title_template=template_data["title_template"],
+                description_template=template_data.get("description_template", ""),
+                is_active=template_data.get("is_active", True)
+            )
+            db.add(template)
+            results["calendar_templates"] += 1
+        except Exception as e:
+            results["errors"].append(f"CalendarTemplate {template_data.get('name')}: {str(e)}")
+    
+    # Import Email Rules
+    for rule_data in import_data.get("email_rules", []):
+        try:
+            existing = await db.execute(select(EmailRule).where(EmailRule.name == rule_data["name"]))
+            if existing.scalar_one_or_none():
+                continue
+            
+            # Map email template ID
+            old_template_id = rule_data.get("email_template_id")
+            new_template_id = email_template_mapping.get(old_template_id, old_template_id) if old_template_id else None
+            
+            rule = EmailRule(
+                name=rule_data["name"],
+                description=rule_data.get("description", ""),
+                trigger_type=EmailRuleTriggerType(rule_data["trigger_type"]),
+                trigger_hours_before=rule_data.get("trigger_hours_before"),
+                recipient_type=EmailRuleRecipientType(rule_data["recipient_type"]),
+                email_template_id=new_template_id,
+                is_active=rule_data.get("is_active", True)
+            )
+            db.add(rule)
+            results["email_rules"] += 1
+        except Exception as e:
+            results["errors"].append(f"EmailRule {rule_data.get('name')}: {str(e)}")
+    
+    # Import Roster Patterns
+    for pattern_data in import_data.get("roster_patterns", []):
+        try:
+            existing = await db.execute(select(RosterPattern).where(RosterPattern.name == pattern_data["name"]))
+            if existing.scalar_one_or_none():
+                continue
+            
+            pattern = RosterPattern(
+                name=pattern_data["name"],
+                description=pattern_data.get("description", "")
+            )
+            db.add(pattern)
+            await db.flush()
+            
+            # Add phases
+            for phase_data in pattern_data.get("phases", []):
+                phase = RosterPhase(
+                    roster_pattern_id=pattern.id,
+                    phase_order=phase_data["phase_order"],
+                    days_on=phase_data["days_on"],
+                    days_off=phase_data["days_off"],
+                    start_time=phase_data.get("start_time"),
+                    end_time=phase_data.get("end_time")
+                )
+                db.add(phase)
+            
+            results["roster_patterns"] += 1
+        except Exception as e:
+            results["errors"].append(f"RosterPattern {pattern_data.get('name')}: {str(e)}")
+    
+    # Import Engineers (after users)
+    for eng_data in import_data.get("engineers", []):
+        try:
+            # Find user by email
+            user_email = eng_data.get("user_email")
+            if not user_email:
+                old_user_id = eng_data.get("user_id")
+                new_user_id = user_mapping.get(old_user_id)
+                if not new_user_id:
+                    results["errors"].append(f"Engineer: No user mapping for user_id {old_user_id}")
+                    continue
+            else:
+                user_result = await db.execute(select(User).where(User.email == user_email))
+                user = user_result.scalar_one_or_none()
+                if not user:
+                    results["errors"].append(f"Engineer: User {user_email} not found")
+                    continue
+                new_user_id = user.id
+            
+            # Check if already an engineer
+            existing = await db.execute(select(Engineer).where(Engineer.user_id == new_user_id))
+            existing_eng = existing.scalar_one_or_none()
+            
+            if existing_eng:
+                engineer_mapping[eng_data["id"]] = existing_eng.id
+                continue
+            
+            # Update user role to engineer
+            user_result = await db.execute(select(User).where(User.id == new_user_id))
+            user = user_result.scalar_one_or_none()
+            if user:
+                user.role = UserRole.ENGINEER
+            
+            engineer = Engineer(
+                user_id=new_user_id,
+                calendar_email=eng_data.get("calendar_email"),
+                is_available=eng_data.get("is_available", True),
+                working_hours_start=eng_data.get("working_hours_start", "09:00"),
+                working_hours_end=eng_data.get("working_hours_end", "17:00")
+            )
+            db.add(engineer)
+            await db.flush()
+            engineer_mapping[eng_data["id"]] = engineer.id
+            
+            # Add skills
+            for skill_data in eng_data.get("skills", []):
+                new_product_id = product_mapping.get(skill_data["product_id"])
+                new_ct_id = change_type_mapping.get(skill_data["change_type_id"])
+                
+                if new_product_id and new_ct_id:
+                    skill = EngineerSkill(
+                        engineer_id=engineer.id,
+                        product_id=new_product_id,
+                        change_type_id=new_ct_id,
+                        proficiency_level=skill_data.get("proficiency_level", 1)
+                    )
+                    db.add(skill)
+            
+            results["engineers"] += 1
+        except Exception as e:
+            results["errors"].append(f"Engineer {eng_data.get('user_email', 'unknown')}: {str(e)}")
+    
+    # Import Fees (after products and change types)
+    for fee_data in import_data.get("fees", []):
+        try:
+            existing = await db.execute(select(Fee).where(Fee.name == fee_data["name"]))
+            if existing.scalar_one_or_none():
+                continue
+            
+            fee = Fee(
+                name=fee_data["name"],
+                description=fee_data.get("description", ""),
+                amount=fee_data["amount"],
+                category=fee_data.get("category", "other"),
+                apply_mode=FeeApplyMode(fee_data.get("apply_mode", "all")),
+                requires_approval=fee_data.get("requires_approval", False),
+                apply_on_weekends=fee_data.get("apply_on_weekends", False),
+                apply_on_bank_holidays=fee_data.get("apply_on_bank_holidays", False),
+                apply_out_of_hours=fee_data.get("apply_out_of_hours", False),
+                charge_per_hour=fee_data.get("charge_per_hour", False)
+            )
+            db.add(fee)
+            await db.flush()
+            
+            # Add product assignments
+            for old_prod_id in fee_data.get("product_ids", []):
+                new_prod_id = product_mapping.get(old_prod_id)
+                if new_prod_id:
+                    assignment = FeeProductAssignment(fee_id=fee.id, product_id=new_prod_id)
+                    db.add(assignment)
+            
+            # Add change type assignments
+            for old_ct_id in fee_data.get("change_type_ids", []):
+                new_ct_id = change_type_mapping.get(old_ct_id)
+                if new_ct_id:
+                    assignment = FeeChangeTypeAssignment(fee_id=fee.id, change_type_id=new_ct_id)
+                    db.add(assignment)
+            
+            results["fees"] += 1
+        except Exception as e:
+            results["errors"].append(f"Fee {fee_data.get('name')}: {str(e)}")
+    
+    await db.commit()
+    
+    return {
+        "message": "Import completed",
+        "results": results,
+        "id_mappings": {
+            "users": user_mapping,
+            "products": product_mapping,
+            "change_types": change_type_mapping,
+            "engineers": engineer_mapping
+        }
+    }
