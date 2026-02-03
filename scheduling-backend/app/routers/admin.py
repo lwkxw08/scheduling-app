@@ -427,7 +427,11 @@ async def create_engineer(
     await db.refresh(engineer)
     
     result = await db.execute(
-        select(Engineer).where(Engineer.id == engineer.id).options(selectinload(Engineer.user))
+        select(Engineer).where(Engineer.id == engineer.id).options(
+            selectinload(Engineer.user),
+            selectinload(Engineer.skills),
+            selectinload(Engineer.schedules)
+        )
     )
     engineer = result.scalar_one()
     
