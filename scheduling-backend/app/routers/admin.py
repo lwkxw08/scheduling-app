@@ -2276,7 +2276,9 @@ async def get_full_data_export(
         selectinload(Booking.product),
         selectinload(Booking.change_type),
         selectinload(Booking.booker),
-        selectinload(Booking.fees).selectinload(BookingFee.fee)
+        selectinload(Booking.fees).selectinload(BookingFee.fee),
+        selectinload(Booking.fees).selectinload(BookingFee.approved_by),
+        selectinload(Booking.fees).selectinload(BookingFee.waived_by)
     )
     
     if start_date:
@@ -2300,9 +2302,18 @@ async def get_full_data_export(
     
     export_data = []
     for b in bookings:
-        # Calculate total fees
-        total_fees = sum(f.amount for f in b.fees if f.status.value == 'approved') if b.fees else 0
-        pending_fees = sum(f.amount for f in b.fees if f.status.value == 'pending') if b.fees else 0
+        # Calculate total fees by status
+        total_approved = sum(f.amount for f in b.fees if f.status.value == 'approved') if b.fees else 0
+        total_pending = sum(f.amount for f in b.fees if f.status.value == 'pending') if b.fees else 0
+        total_waived = sum(f.amount for f in b.fees if f.status.value == 'waived') if b.fees else 0
+        
+        # Build fee breakdown string and collect fee details
+        fee_names = []
+        fee_details = []
+        for f in (b.fees or []):
+            fee_name = f.fee.name if f.fee else "Unknown"
+            fee_names.append(fee_name)
+            fee_details.append(f"{fee_name}: £{f.amount:.2f} ({f.status.value})")
         
         row = {
             "id": b.id,
@@ -2322,8 +2333,12 @@ async def get_full_data_export(
             "additional_emails": ", ".join(b.additional_emails) if b.additional_emails else None,
             "cancellation_fee": b.cancellation_fee,
             "expedite_fee": b.expedite_fee,
-            "total_approved_fees": total_fees,
-            "total_pending_fees": pending_fees,
+            "total_approved_fees": total_approved,
+            "total_pending_fees": total_pending,
+            "total_waived_fees": total_waived,
+            "fee_count": len(b.fees) if b.fees else 0,
+            "fee_names": ", ".join(fee_names) if fee_names else None,
+            "fee_breakdown": "; ".join(fee_details) if fee_details else None,
             "issue_description": b.issue_description,
             "issue_reported_at": b.issue_reported_at.isoformat() if b.issue_reported_at else None,
             "issue_resolved": b.issue_resolved,
@@ -2601,6 +2616,98 @@ async def get_revenue_summary_report(
         "individual_fees": individual_fees,
         "total_other_fees": total_other_fees,
     }
+
+
+@router.get("/reports/fees-by-booking")
+async def get_fees_by_booking_report(
+    start_date: str = None,
+    end_date: str = None,
+    status: str = None,
+    product_id: int = None,
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get fees by booking report with detailed fee breakdown per booking"""
+    await get_admin_user(authorization, db)
+    
+    from datetime import datetime
+    
+    # Query bookings with their fees
+    query = select(Booking).options(
+        selectinload(Booking.product),
+        selectinload(Booking.change_type),
+        selectinload(Booking.booker),
+        selectinload(Booking.fees).selectinload(BookingFee.fee),
+        selectinload(Booking.fees).selectinload(BookingFee.approved_by),
+        selectinload(Booking.fees).selectinload(BookingFee.waived_by)
+    )
+    
+    if start_date:
+        query = query.where(Booking.scheduled_date >= datetime.fromisoformat(start_date))
+    if end_date:
+        query = query.where(Booking.scheduled_date <= datetime.fromisoformat(end_date))
+    if status:
+        query = query.where(Booking.status == status)
+    if product_id:
+        query = query.where(Booking.product_id == product_id)
+    
+    # Only include bookings that have fees
+    query = query.where(Booking.fees.any())
+    
+    query = query.order_by(Booking.scheduled_date.desc())
+    result = await db.execute(query)
+    bookings = result.scalars().all()
+    
+    report_data = []
+    for b in bookings:
+        # Build fee breakdown for this booking
+        fee_breakdown = []
+        total_approved = 0
+        total_pending = 0
+        total_waived = 0
+        
+        for bf in b.fees:
+            fee_entry = {
+                "fee_id": bf.fee_id,
+                "fee_name": bf.fee.name if bf.fee else "Unknown",
+                "fee_type": bf.fee.fee_type.value if bf.fee and hasattr(bf.fee.fee_type, 'value') else str(bf.fee.fee_type) if bf.fee else None,
+                "amount": bf.amount,
+                "status": bf.status.value if hasattr(bf.status, 'value') else bf.status,
+                "approved_by": bf.approved_by.full_name if bf.approved_by else None,
+                "approved_at": bf.updated_at.isoformat() if bf.approved_by and bf.updated_at else None,
+                "waived_by": bf.waived_by.full_name if bf.waived_by else None,
+                "waiver_reason": bf.waiver_reason,
+                "created_at": bf.created_at.isoformat() if bf.created_at else None
+            }
+            fee_breakdown.append(fee_entry)
+            
+            if bf.status.value == 'approved':
+                total_approved += bf.amount
+            elif bf.status.value == 'pending':
+                total_pending += bf.amount
+            elif bf.status.value == 'waived':
+                total_waived += bf.amount
+        
+        booking_entry = {
+            "booking_id": b.id,
+            "order_reference": b.order_reference,
+            "customer_name": b.customer_name,
+            "product_name": b.product.name if b.product else None,
+            "change_type_name": b.change_type.name if b.change_type else None,
+            "scheduled_date": b.scheduled_date.isoformat() if b.scheduled_date else None,
+            "booking_status": b.status.value if hasattr(b.status, 'value') else b.status,
+            "booker_name": b.booker.full_name if b.booker else None,
+            "booker_email": b.booker.email if b.booker else None,
+            "booking_created_at": b.created_at.isoformat() if b.created_at else None,
+            "fee_breakdown": fee_breakdown,
+            "total_approved_fees": total_approved,
+            "total_pending_fees": total_pending,
+            "total_waived_fees": total_waived,
+            "total_fees": total_approved + total_pending
+        }
+        report_data.append(booking_entry)
+    
+    return report_data
 
 
 # ==================== Engineer Unavailability Management ====================

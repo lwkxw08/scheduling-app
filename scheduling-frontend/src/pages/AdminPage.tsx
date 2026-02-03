@@ -1183,6 +1183,11 @@ export default function AdminPage() {
                 if (reportStatusFilter && reportStatusFilter !== 'all') filters.status = reportStatusFilter;
                 data = await api.getFullDataExport(filters) as any[];
                 break;
+              case 'fees-by-booking':
+                if (reportProductFilter && reportProductFilter !== 'all') filters.product_id = parseInt(reportProductFilter);
+                if (reportStatusFilter && reportStatusFilter !== 'all') filters.status = reportStatusFilter;
+                data = await api.getFeesByBookingReport(filters) as any[];
+                break;
             }
       
             setReportData(data);
@@ -1318,6 +1323,10 @@ export default function AdminPage() {
                 'Expedite Fee': b.expedite_fee,
                 'Total Approved Fees': b.total_approved_fees,
                 'Total Pending Fees': b.total_pending_fees,
+                'Total Waived Fees': b.total_waived_fees,
+                'Fee Count': b.fee_count,
+                'Fee Names': b.fee_names,
+                'Fee Breakdown': b.fee_breakdown,
                 'Issue Description': b.issue_description,
                 'Issue Reported At': b.issue_reported_at,
                 'Issue Resolved': b.issue_resolved ? 'Yes' : 'No',
@@ -1335,6 +1344,39 @@ export default function AdminPage() {
                 }
               });
               return row;
+            });
+            break;
+          case 'fees-by-booking':
+            sheetName = 'Fees by Booking';
+            exportData = [];
+            reportData.forEach(b => {
+              if (b.fee_breakdown && b.fee_breakdown.length > 0) {
+                b.fee_breakdown.forEach((fee: any) => {
+                  exportData.push({
+                    'Booking ID': b.booking_id,
+                    'Order Reference': b.order_reference,
+                    'Customer Name': b.customer_name,
+                    'Product': b.product_name,
+                    'Change Type': b.change_type_name,
+                    'Scheduled Date': b.scheduled_date,
+                    'Booking Status': b.booking_status,
+                    'Booker Name': b.booker_name,
+                    'Booker Email': b.booker_email,
+                    'Fee Name': fee.fee_name,
+                    'Fee Type': fee.fee_type,
+                    'Fee Amount': fee.amount,
+                    'Fee Status': fee.status,
+                    'Approved By': fee.approved_by || '',
+                    'Approved At': fee.approved_at || '',
+                    'Waived By': fee.waived_by || '',
+                    'Waiver Reason': fee.waiver_reason || '',
+                    'Fee Created At': fee.created_at,
+                    'Total Approved Fees': b.total_approved_fees,
+                    'Total Pending Fees': b.total_pending_fees,
+                    'Total Waived Fees': b.total_waived_fees,
+                  });
+                });
+              }
             });
             break;
         }
@@ -2583,6 +2625,7 @@ export default function AdminPage() {
                         <SelectItem value="revenue">Revenue Summary</SelectItem>
                                               <SelectItem value="user-activity">User Activity</SelectItem>
                                               <SelectItem value="full-data-export">Full Data Export</SelectItem>
+                                              <SelectItem value="fees-by-booking">Fees by Booking</SelectItem>
                                             </SelectContent>
                     </Select>
                   </div>
@@ -2602,7 +2645,7 @@ export default function AdminPage() {
                   </div>
                 </div>
 
-                                {(reportType === 'bookings' || reportType === 'full-data-export') && (
+                                {(reportType === 'bookings' || reportType === 'full-data-export' || reportType === 'fees-by-booking') && (
                                   <div className="grid grid-cols-3 gap-4 p-4 bg-gray-50 rounded-lg">
                     <div className="space-y-2">
                       <Label>Product Filter</Label>
@@ -2776,6 +2819,19 @@ export default function AdminPage() {
                               <TableHead>Days Since Login</TableHead>
                             </>
                           )}
+                          {reportType === 'fees-by-booking' && (
+                            <>
+                              <TableHead>Booking ID</TableHead>
+                              <TableHead>Order Ref</TableHead>
+                              <TableHead>Product</TableHead>
+                              <TableHead>Change Type</TableHead>
+                              <TableHead>Booker</TableHead>
+                              <TableHead>Approved Fees</TableHead>
+                              <TableHead>Pending Fees</TableHead>
+                              <TableHead>Waived Fees</TableHead>
+                              <TableHead>Fee Count</TableHead>
+                            </>
+                          )}
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -2866,6 +2922,19 @@ export default function AdminPage() {
                                 </Badge>
                               ) : '-'}
                             </TableCell>
+                          </TableRow>
+                        ))}
+                        {reportType === 'fees-by-booking' && reportData.map((b: any) => (
+                          <TableRow key={b.booking_id}>
+                            <TableCell className="font-medium">{b.booking_id}</TableCell>
+                            <TableCell>{b.order_reference}</TableCell>
+                            <TableCell>{b.product_name}</TableCell>
+                            <TableCell>{b.change_type_name}</TableCell>
+                            <TableCell>{b.booker_name}</TableCell>
+                            <TableCell className="text-green-600 font-medium">£{b.total_approved_fees?.toFixed(2) || '0.00'}</TableCell>
+                            <TableCell className="text-yellow-600 font-medium">£{b.total_pending_fees?.toFixed(2) || '0.00'}</TableCell>
+                            <TableCell className="text-gray-500">£{b.total_waived_fees?.toFixed(2) || '0.00'}</TableCell>
+                            <TableCell>{b.fee_breakdown?.length || 0}</TableCell>
                           </TableRow>
                         ))}
                       </TableBody>
