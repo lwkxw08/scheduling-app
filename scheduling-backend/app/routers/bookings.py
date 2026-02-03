@@ -213,7 +213,17 @@ async def apply_fees_to_booking(
     change_type_name = change_type.name.lower() if change_type else ""
     product_name = product.name.lower() if product else ""
     
+    # Calculate if this is an expedite booking (within minimum notice period)
+    # This is needed to determine if expedite fees should apply
+    is_expedite_booking = False
+    minimum_notice_hours = change_type.minimum_notice_hours if change_type else 0
+    if minimum_notice_hours > 0 and scheduled_date:
+        now = datetime.utcnow()
+        hours_until_booking = (scheduled_date - now).total_seconds() / 3600
+        is_expedite_booking = hours_until_booking < minimum_notice_hours
+    
     logger.info(f"apply_fees_to_booking: booking_id={booking_id}, product={product_name}, change_type={change_type_name}, scheduled_date={scheduled_date}")
+    logger.info(f"is_expedite_booking={is_expedite_booking}, minimum_notice_hours={minimum_notice_hours}")
     logger.info(f"Found {len(fees)} active fees in database")
     
     for fee in fees:
@@ -287,6 +297,12 @@ async def apply_fees_to_booking(
         if "amendment" in fee_type_lower or "amend" in fee_type_lower or \
            "amendment" in fee_name_lower or "amend" in fee_name_lower:
             continue
+        
+        # Skip expedite fees if booking is NOT within minimum notice period
+        if "expedite" in fee_type_lower or "expedite" in fee_name_lower:
+            if not is_expedite_booking:
+                logger.info(f"  - SKIPPING expedite fee (booking not within minimum notice period)")
+                continue
         
         # Check time-based conditions
         is_time_based_fee = False
