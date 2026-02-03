@@ -884,7 +884,20 @@ async def create_expedite_request(
     if not product:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
     
-    expedite_fee = product.expedite_fee or 0.0
+    # Get the change type to check minimum notice period
+    change_type_result = await db.execute(select(ChangeType).where(ChangeType.id == request_data.change_type_id))
+    change_type = change_type_result.scalar_one_or_none()
+    
+    # Calculate if this booking is within the minimum notice period
+    # Only charge expedite fee if the requested date is within the minimum notice period
+    expedite_fee = 0.0
+    if change_type and change_type.minimum_notice_hours and change_type.minimum_notice_hours > 0:
+        now = datetime.utcnow()
+        hours_until_booking = (request_data.requested_date - now).total_seconds() / 3600
+        is_within_notice_period = hours_until_booking < change_type.minimum_notice_hours
+        
+        if is_within_notice_period and product.expedite_fee:
+            expedite_fee = product.expedite_fee
     
     # Create the expedite request
     expedite_request = ExpediteRequest(
