@@ -1108,6 +1108,7 @@ export default function AdminPage() {
       setApproveScheduledDate('');
       setApproveAdminNotes('');
       loadExpediteRequests();
+      loadAllData();
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -1128,6 +1129,7 @@ export default function AdminPage() {
       setSelectedExpediteRequest(null);
       setRejectAdminNotes('');
       loadExpediteRequests();
+      loadAllData();
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -1374,7 +1376,36 @@ export default function AdminPage() {
                     'Total Approved Fees': b.total_approved_fees,
                     'Total Pending Fees': b.total_pending_fees,
                     'Total Waived Fees': b.total_waived_fees,
+                    'Legacy Expedite Fee': b.legacy_expedite_fee || 0,
+                    'Legacy Cancellation Fee': b.legacy_cancellation_fee || 0,
                   });
+                });
+              } else {
+                // Include bookings without fees so user can see which ones are missing
+                exportData.push({
+                  'Booking ID': b.booking_id,
+                  'Order Reference': b.order_reference,
+                  'Customer Name': b.customer_name,
+                  'Product': b.product_name,
+                  'Change Type': b.change_type_name,
+                  'Scheduled Date': b.scheduled_date,
+                  'Booking Status': b.booking_status,
+                  'Booker Name': b.booker_name,
+                  'Booker Email': b.booker_email,
+                  'Fee Name': '(No fees recorded)',
+                  'Fee Type': '',
+                  'Fee Amount': 0,
+                  'Fee Status': '',
+                  'Approved By': '',
+                  'Approved At': '',
+                  'Waived By': '',
+                  'Waiver Reason': '',
+                  'Fee Created At': '',
+                  'Total Approved Fees': b.total_approved_fees || 0,
+                  'Total Pending Fees': b.total_pending_fees || 0,
+                  'Total Waived Fees': b.total_waived_fees || 0,
+                  'Legacy Expedite Fee': b.legacy_expedite_fee || 0,
+                  'Legacy Cancellation Fee': b.legacy_cancellation_fee || 0,
                 });
               }
             });
@@ -2829,6 +2860,8 @@ export default function AdminPage() {
                               <TableHead>Approved Fees</TableHead>
                               <TableHead>Pending Fees</TableHead>
                               <TableHead>Waived Fees</TableHead>
+                              <TableHead>Legacy Expedite</TableHead>
+                              <TableHead>Legacy Cancel</TableHead>
                               <TableHead>Fee Count</TableHead>
                             </>
                           )}
@@ -2925,7 +2958,7 @@ export default function AdminPage() {
                           </TableRow>
                         ))}
                         {reportType === 'fees-by-booking' && reportData.map((b: any) => (
-                          <TableRow key={b.booking_id}>
+                          <TableRow key={b.booking_id} className={!b.has_booking_fees ? 'bg-yellow-50' : ''}>
                             <TableCell className="font-medium">{b.booking_id}</TableCell>
                             <TableCell>{b.order_reference}</TableCell>
                             <TableCell>{b.product_name}</TableCell>
@@ -2934,6 +2967,8 @@ export default function AdminPage() {
                             <TableCell className="text-green-600 font-medium">£{b.total_approved_fees?.toFixed(2) || '0.00'}</TableCell>
                             <TableCell className="text-yellow-600 font-medium">£{b.total_pending_fees?.toFixed(2) || '0.00'}</TableCell>
                             <TableCell className="text-gray-500">£{b.total_waived_fees?.toFixed(2) || '0.00'}</TableCell>
+                            <TableCell className="text-blue-600">£{b.legacy_expedite_fee?.toFixed(2) || '0.00'}</TableCell>
+                            <TableCell className="text-red-600">£{b.legacy_cancellation_fee?.toFixed(2) || '0.00'}</TableCell>
                             <TableCell>{b.fee_breakdown?.length || 0}</TableCell>
                           </TableRow>
                         ))}

@@ -2632,7 +2632,7 @@ async def get_fees_by_booking_report(
     
     from datetime import datetime
     
-    # Query bookings with their fees
+    # Query ALL bookings with their fees (not just those with fees)
     query = select(Booking).options(
         selectinload(Booking.product),
         selectinload(Booking.change_type),
@@ -2651,22 +2651,19 @@ async def get_fees_by_booking_report(
     if product_id:
         query = query.where(Booking.product_id == product_id)
     
-    # Only include bookings that have fees
-    query = query.where(Booking.fees.any())
-    
     query = query.order_by(Booking.scheduled_date.desc())
     result = await db.execute(query)
     bookings = result.scalars().all()
     
     report_data = []
     for b in bookings:
-        # Build fee breakdown for this booking
+        # Build fee breakdown for this booking from BookingFee records
         fee_breakdown = []
         total_approved = 0
         total_pending = 0
         total_waived = 0
         
-        for bf in b.fees:
+        for bf in (b.fees or []):
             fee_entry = {
                 "fee_id": bf.fee_id,
                 "fee_name": bf.fee.name if bf.fee else "Unknown",
@@ -2688,6 +2685,10 @@ async def get_fees_by_booking_report(
             elif bf.status.value == 'waived':
                 total_waived += bf.amount
         
+        # Include legacy expedite_fee and cancellation_fee from Booking table
+        legacy_expedite_fee = float(b.expedite_fee or 0)
+        legacy_cancellation_fee = float(b.cancellation_fee or 0)
+        
         booking_entry = {
             "booking_id": b.id,
             "order_reference": b.order_reference,
@@ -2703,7 +2704,10 @@ async def get_fees_by_booking_report(
             "total_approved_fees": total_approved,
             "total_pending_fees": total_pending,
             "total_waived_fees": total_waived,
-            "total_fees": total_approved + total_pending
+            "total_fees": total_approved + total_pending,
+            "legacy_expedite_fee": legacy_expedite_fee,
+            "legacy_cancellation_fee": legacy_cancellation_fee,
+            "has_booking_fees": len(b.fees or []) > 0
         }
         report_data.append(booking_entry)
     
