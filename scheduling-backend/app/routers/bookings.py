@@ -179,9 +179,6 @@ async def apply_late_fee_to_booking(
     Finds fees that match the product/change type and contain the fee_type_keyword.
     Returns list of BookingFee objects created.
     """
-    import logging
-    logger = logging.getLogger(__name__)
-    
     applied_fees = []
     
     # Get all active fees with their assignments
@@ -204,17 +201,15 @@ async def apply_late_fee_to_booking(
     change_type_name = change_type.name.lower() if change_type else ""
     product_name = product.name.lower() if product else ""
     
-    logger.info(f"apply_late_fee_to_booking: booking_id={booking_id}, fee_type_keyword={fee_type_keyword}")
-    
     for fee in fees:
         fee_type_lower = fee.fee_type.lower() if fee.fee_type else ""
         fee_name_lower = fee.name.lower() if fee.name else ""
         
         # Only consider fees that match the keyword (cancellation or amendment)
-        if fee_type_keyword not in fee_type_lower and fee_type_keyword not in fee_name_lower:
+        keyword_in_type = fee_type_keyword in fee_type_lower
+        keyword_in_name = fee_type_keyword in fee_name_lower
+        if not keyword_in_type and not keyword_in_name:
             continue
-        
-        logger.info(f"Evaluating late fee: {fee.name} (type={fee.fee_type}, amount={fee.amount})")
         
         # Check if fee applies to this product/change type via assignments
         product_ids = [a.product_id for a in fee.product_assignments]
@@ -253,7 +248,6 @@ async def apply_late_fee_to_booking(
             base_applies = True
         
         if not base_applies:
-            logger.info(f"  - SKIPPING fee (doesn't match product/change type)")
             continue
         
         fee_amount = fee.amount
@@ -271,7 +265,6 @@ async def apply_late_fee_to_booking(
             )
             db.add(booking_fee)
             applied_fees.append(booking_fee)
-            logger.info(f"Applied late fee: {fee.name} (amount={fee_amount}, status={fee_status})")
     
     return applied_fees
 
