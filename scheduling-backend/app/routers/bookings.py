@@ -918,8 +918,13 @@ async def preview_applicable_fees(
     applicable_fees = []  # Fees included in total
     indicator_fees = []   # Fees shown as warnings (late cancellation/amendment)
     
+    # Get change type name for matching
+    change_type_name = change_type.name.lower() if change_type else ""
+    product_name = product.name.lower() if product else ""
+    
     for fee in fees:
         fee_type_lower = fee.fee_type.lower() if fee.fee_type else ""
+        fee_name_lower = fee.name.lower() if fee.name else ""
         
         # Step 1: Check if fee applies to this product/change type
         product_ids = [a.product_id for a in fee.product_assignments]
@@ -927,31 +932,44 @@ async def preview_applicable_fees(
         
         has_product_restriction = len(product_ids) > 0
         has_change_type_restriction = len(change_type_ids) > 0
+        has_time_conditions = fee.apply_on_weekends or fee.apply_on_bank_holidays or fee.apply_outside_hours
         
-        # Fee must match product AND/OR change type based on what's configured
+        # Check if fee matches by assignment
         product_matches = product_id in product_ids if has_product_restriction else False
         change_type_matches = change_type_id in change_type_ids if has_change_type_restriction else False
         
-        # Determine if fee is assigned to this booking's product/change type
-        if has_product_restriction and has_change_type_restriction:
-            # Fee has both restrictions - must match at least one
-            base_applies = product_matches or change_type_matches
-        elif has_product_restriction:
-            # Fee only has product restriction - must match product
-            base_applies = product_matches
-        elif has_change_type_restriction:
-            # Fee only has change type restriction - must match change type
-            base_applies = change_type_matches
-        else:
-            # No product/change type restrictions - check if it's a time-based fee
-            # Time-based fees without product/change type restrictions apply globally
-            base_applies = fee.apply_on_weekends or fee.apply_on_bank_holidays or fee.apply_outside_hours
+        # Also check if fee_type or fee_name matches the change type name (fallback matching)
+        fee_type_matches_change = change_type_name and (
+            change_type_name in fee_type_lower or 
+            change_type_name in fee_name_lower or
+            fee_type_lower in change_type_name
+        )
         
-        # Skip if fee doesn't apply to this product/change type
+        # Also check if fee_type or fee_name matches the product name
+        fee_type_matches_product = product_name and (
+            product_name in fee_type_lower or 
+            product_name in fee_name_lower
+        )
+        
+        # Determine if fee applies based on assignments OR name matching
+        if has_product_restriction or has_change_type_restriction:
+            # Fee has explicit assignments - use those
+            base_applies = product_matches or change_type_matches
+        elif has_time_conditions:
+            # Time-based fee with no restrictions - applies globally when time conditions met
+            base_applies = True
+        elif fee_type_matches_change or fee_type_matches_product:
+            # Fee name/type matches the change type or product - apply it
+            base_applies = True
+        else:
+            # No restrictions, no time conditions, no name match - skip
+            base_applies = False
+        
+        # Skip if fee doesn't apply
         if not base_applies:
             continue
         
-        # Step 2: Handle special fee types
+        # Step 2: Handle special fee types (Late Cancellation/Amendment as indicators)
         
         # Late Cancellation fees - show as indicator only
         if "cancellation" in fee_type_lower or "cancel" in fee_type_lower:
@@ -984,10 +1002,9 @@ async def preview_applicable_fees(
             if not is_expedite_booking:
                 continue  # Skip expedite fee if not within notice period
         
-        # Step 3: Check time-based conditions
+        # Step 3: Check time-based conditions (if fee has them)
         is_time_based_fee = False
         time_condition_met = False
-        has_time_conditions = fee.apply_on_weekends or fee.apply_on_bank_holidays or fee.apply_outside_hours
         
         if has_time_conditions:
             # Check weekend condition
