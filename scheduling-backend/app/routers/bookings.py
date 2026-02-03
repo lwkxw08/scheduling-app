@@ -558,7 +558,7 @@ async def get_bookings(
     return [BookingResponse.model_validate(b) for b in bookings]
 
 
-@router.get("/{booking_id}", response_model=BookingResponse)
+@router.get("/{booking_id}")
 async def get_booking(
     booking_id: int,
     authorization: str = Header(None),
@@ -573,7 +573,8 @@ async def get_booking(
             selectinload(Booking.engineer).selectinload(Engineer.user),
             selectinload(Booking.engineer).selectinload(Engineer.schedules),
             selectinload(Booking.product),
-            selectinload(Booking.change_type)
+            selectinload(Booking.change_type),
+            selectinload(Booking.fees).selectinload(BookingFee.fee)
         )
     )
     booking = result.scalar_one_or_none()
@@ -584,7 +585,29 @@ async def get_booking(
     if user.role.value != "admin" and booking.booker_id != user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
     
-    return BookingResponse.model_validate(booking)
+    # Build response with fees
+    response = BookingResponse.model_validate(booking)
+    response_dict = response.model_dump()
+    
+    # Add fees to response
+    fees_list = []
+    for bf in (booking.fees or []):
+        fees_list.append({
+            "id": bf.id,
+            "booking_id": bf.booking_id,
+            "fee_id": bf.fee_id,
+            "amount": bf.amount,
+            "status": bf.status.value if hasattr(bf.status, 'value') else bf.status,
+            "waived_by_id": bf.waived_by_id,
+            "waiver_reason": bf.waiver_reason,
+            "approved_by_id": bf.approved_by_id,
+            "created_at": bf.created_at.isoformat() if bf.created_at else None,
+            "fee_name": bf.fee.name if bf.fee else None,
+            "fee_type": bf.fee.fee_type if bf.fee else None
+        })
+    response_dict["fees"] = fees_list
+    
+    return response_dict
 
 
 @router.patch("/{booking_id}", response_model=BookingResponse)

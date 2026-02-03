@@ -615,29 +615,96 @@ export default function BookingDetailPage() {
             </CardContent>
           </Card>
 
-          {(booking.cancellation_fee > 0 || booking.expedite_fee > 0) && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Fees</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  {booking.expedite_fee > 0 && (
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Expedite Fee</span>
-                      <span className="font-medium">£{booking.expedite_fee.toFixed(2)}</span>
+          {/* Fees Section */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Fees</CardTitle>
+              <CardDescription>
+                Fees associated with this booking
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {(booking.fees && booking.fees.length > 0) || booking.expedite_fee > 0 || booking.cancellation_fee > 0 ? (
+                <div className="space-y-4">
+                  {/* New Fee System - BookingFee records */}
+                  {booking.fees && booking.fees.length > 0 && (
+                    <div className="space-y-2">
+                      <Label className="text-gray-500 text-sm">Applied Fees</Label>
+                      <div className="border rounded-lg divide-y">
+                        {booking.fees.map((fee) => (
+                          <div key={fee.id} className="flex items-center justify-between p-3">
+                            <div>
+                              <p className="font-medium">{fee.fee_name || 'Fee'}</p>
+                              <p className="text-sm text-gray-500">{fee.fee_type}</p>
+                            </div>
+                            <div className="text-right">
+                              <p className="font-medium">£{fee.amount.toFixed(2)}</p>
+                              <Badge 
+                                variant={fee.status === 'approved' ? 'default' : fee.status === 'pending' ? 'secondary' : 'outline'}
+                                className={
+                                  fee.status === 'approved' ? 'bg-green-100 text-green-800' :
+                                  fee.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                                  'bg-gray-100 text-gray-800'
+                                }
+                              >
+                                {fee.status}
+                              </Badge>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      {/* Fee Totals */}
+                      <div className="mt-3 pt-3 border-t space-y-1">
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-600">Total Approved</span>
+                          <span className="font-medium text-green-600">
+                            £{booking.fees.filter(f => f.status === 'approved').reduce((sum, f) => sum + f.amount, 0).toFixed(2)}
+                          </span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-600">Total Pending</span>
+                          <span className="font-medium text-yellow-600">
+                            £{booking.fees.filter(f => f.status === 'pending').reduce((sum, f) => sum + f.amount, 0).toFixed(2)}
+                          </span>
+                        </div>
+                        {booking.fees.some(f => f.status === 'waived') && (
+                          <div className="flex justify-between text-sm">
+                            <span className="text-gray-600">Total Waived</span>
+                            <span className="font-medium text-gray-500">
+                              £{booking.fees.filter(f => f.status === 'waived').reduce((sum, f) => sum + f.amount, 0).toFixed(2)}
+                            </span>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
-                  {booking.cancellation_fee > 0 && (
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Late Change/Cancellation Fee</span>
-                      <span className="font-medium">£{booking.cancellation_fee.toFixed(2)}</span>
+                  
+                  {/* Legacy Fees (expedite_fee, cancellation_fee on Booking table) */}
+                  {(booking.expedite_fee > 0 || booking.cancellation_fee > 0) && (
+                    <div className="space-y-2">
+                      <Label className="text-gray-500 text-sm">Legacy Fees</Label>
+                      <div className="space-y-2">
+                        {booking.expedite_fee > 0 && (
+                          <div className="flex justify-between p-2 bg-gray-50 rounded">
+                            <span className="text-gray-600">Expedite Fee</span>
+                            <span className="font-medium">£{booking.expedite_fee.toFixed(2)}</span>
+                          </div>
+                        )}
+                        {booking.cancellation_fee > 0 && (
+                          <div className="flex justify-between p-2 bg-gray-50 rounded">
+                            <span className="text-gray-600">Late Change/Cancellation Fee</span>
+                            <span className="font-medium">£{booking.cancellation_fee.toFixed(2)}</span>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>
-              </CardContent>
-            </Card>
-          )}
+              ) : (
+                <p className="text-gray-400 text-sm">No fees associated with this booking</p>
+              )}
+            </CardContent>
+          </Card>
 
           {canModify && (
             <Card className="border-red-200">

@@ -92,6 +92,7 @@ export interface Booking {
   engineer?: Engineer;
   product?: Product;
   change_type?: ChangeType;
+  fees?: BookingFee[];
 }
 
 export interface TimeSlot {
