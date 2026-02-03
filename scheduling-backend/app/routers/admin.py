@@ -39,6 +39,7 @@ from app.schemas.schemas import (
     BankHolidayCreate, BankHolidayResponse
 )
 from app.services.auth import decode_access_token
+from app.routers.bookings import apply_fees_to_booking
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
@@ -2141,6 +2142,16 @@ async def approve_expedite_request(
     )
     db.add(booking)
     await db.flush()
+    
+    # Apply fees to the booking (Failover Testing, Out of Hours, etc.)
+    await apply_fees_to_booking(
+        db,
+        booking.id,
+        expedite_request.product_id,
+        expedite_request.change_type_id,
+        approval_data.scheduled_date,
+        expedite_request.duration_hours
+    )
     
     # Update the expedite request
     expedite_request.status = ExpediteRequestStatus.APPROVED

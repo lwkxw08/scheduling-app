@@ -213,23 +213,33 @@ async def apply_fees_to_booking(
     change_type_name = change_type.name.lower() if change_type else ""
     product_name = product.name.lower() if product else ""
     
-    logger.info(f"apply_fees_to_booking: booking_id={booking_id}, product={product_name}, change_type={change_type_name}")
+    logger.info(f"apply_fees_to_booking: booking_id={booking_id}, product={product_name}, change_type={change_type_name}, scheduled_date={scheduled_date}")
+    logger.info(f"Found {len(fees)} active fees in database")
     
     for fee in fees:
         fee_type_lower = fee.fee_type.lower() if fee.fee_type else ""
         fee_name_lower = fee.name.lower() if fee.name else ""
         
+        logger.info(f"Evaluating fee: {fee.name} (type={fee.fee_type}, amount={fee.amount})")
+        
         # Check if fee applies to this product/change type via assignments
         product_ids = [a.product_id for a in fee.product_assignments]
         change_type_ids = [a.change_type_id for a in fee.change_type_assignments]
+        
+        logger.info(f"  - product_assignments: {product_ids}, change_type_assignments: {change_type_ids}")
         
         has_product_restriction = len(product_ids) > 0
         has_change_type_restriction = len(change_type_ids) > 0
         has_time_conditions = fee.apply_on_weekends or fee.apply_on_bank_holidays or fee.apply_outside_hours
         
+        logger.info(f"  - has_product_restriction={has_product_restriction}, has_change_type_restriction={has_change_type_restriction}, has_time_conditions={has_time_conditions}")
+        logger.info(f"  - apply_on_weekends={fee.apply_on_weekends}, apply_on_bank_holidays={fee.apply_on_bank_holidays}, apply_outside_hours={fee.apply_outside_hours}")
+        
         # Check if fee matches by assignment
         product_matches = product_id in product_ids if has_product_restriction else False
         change_type_matches = change_type_id in change_type_ids if has_change_type_restriction else False
+        
+        logger.info(f"  - product_matches={product_matches}, change_type_matches={change_type_matches}")
         
         # Fallback name matching (same as preview_applicable_fees)
         fee_type_matches_change = change_type_name and (
@@ -243,21 +253,30 @@ async def apply_fees_to_booking(
             product_name in fee_name_lower
         )
         
+        logger.info(f"  - fee_type_matches_change={fee_type_matches_change}, fee_type_matches_product={fee_type_matches_product}")
+        
         # Determine if fee applies based on assignments OR name matching
         if has_product_restriction and has_change_type_restriction:
             base_applies = product_matches and change_type_matches
+            logger.info(f"  - Using BOTH assignment matching (AND): base_applies={base_applies}")
         elif has_product_restriction:
             base_applies = product_matches
+            logger.info(f"  - Using product assignment matching: base_applies={base_applies}")
         elif has_change_type_restriction:
             base_applies = change_type_matches
+            logger.info(f"  - Using change type assignment matching: base_applies={base_applies}")
         elif has_time_conditions:
             base_applies = True
+            logger.info(f"  - Time-based fee with no restrictions: base_applies={base_applies}")
         elif fee_type_matches_change or fee_type_matches_product:
             base_applies = True
+            logger.info(f"  - Name matching: base_applies={base_applies}")
         else:
             base_applies = False
+            logger.info(f"  - No match: base_applies={base_applies}")
         
         if not base_applies:
+            logger.info(f"  - SKIPPING fee (base_applies=False)")
             continue
         
         # Skip Late Cancellation and Late Amendment fees (they're applied later)
@@ -274,21 +293,32 @@ async def apply_fees_to_booking(
         time_condition_met = False
         
         if has_time_conditions:
+            logger.info(f"  - Checking time conditions for scheduled_date={scheduled_date}")
+            if scheduled_date:
+                logger.info(f"  - scheduled_date.weekday()={scheduled_date.weekday()}, scheduled_date.hour={scheduled_date.hour}")
+            
             if fee.apply_on_weekends and scheduled_date and scheduled_date.weekday() >= 5:
                 time_condition_met = True
                 is_time_based_fee = True
+                logger.info(f"  - Weekend condition MET")
             
             if fee.apply_on_bank_holidays and scheduled_date and scheduled_date.date() in bank_holidays:
                 time_condition_met = True
                 is_time_based_fee = True
+                logger.info(f"  - Bank holiday condition MET")
             
-            if fee.apply_outside_hours and scheduled_date and is_outside_working_hours(
-                scheduled_date, fee.outside_hours_start, fee.outside_hours_end
-            ):
-                time_condition_met = True
-                is_time_based_fee = True
+            if fee.apply_outside_hours and scheduled_date:
+                outside_hours_result = is_outside_working_hours(
+                    scheduled_date, fee.outside_hours_start, fee.outside_hours_end
+                )
+                logger.info(f"  - Outside hours check: start={fee.outside_hours_start}, end={fee.outside_hours_end}, result={outside_hours_result}")
+                if outside_hours_result:
+                    time_condition_met = True
+                    is_time_based_fee = True
+                    logger.info(f"  - Outside hours condition MET")
             
             if not time_condition_met:
+                logger.info(f"  - SKIPPING fee (time conditions not met)")
                 continue
         
         # Calculate the fee amount
@@ -325,8 +355,15 @@ async def apply_fees_to_booking(
             logger.info(f"Applied fee: {fee.name} (amount={fee_amount}, status={fee_status})")
     
     if applied_fees:
-        await db.commit()
-        logger.info(f"Committed {len(applied_fees)} fees for booking {booking_id}")
+        try:
+            await db.commit()
+            logger.info(f"Committed {len(applied_fees)} fees for booking {booking_id}")
+        except Exception as commit_error:
+            logger.error(f"Error committing fees for booking {booking_id}: {str(commit_error)}")
+            import traceback
+            logger.error(traceback.format_exc())
+    else:
+        logger.info(f"No fees to apply for booking {booking_id}")
     
     return applied_fees
 
@@ -431,14 +468,23 @@ async def create_booking(
     await db.refresh(new_booking)
     
     # Apply fees based on product, change type, and time-based conditions
-    await apply_fees_to_booking(
-        db,
-        new_booking.id,
-        booking_data.product_id,
-        booking_data.change_type_id,
-        booking_data.scheduled_date,
-        booking_data.duration_hours
-    )
+    import logging
+    fee_logger = logging.getLogger(__name__)
+    try:
+        fee_logger.info(f"Calling apply_fees_to_booking for booking {new_booking.id}")
+        applied_fees = await apply_fees_to_booking(
+            db,
+            new_booking.id,
+            booking_data.product_id,
+            booking_data.change_type_id,
+            booking_data.scheduled_date,
+            booking_data.duration_hours
+        )
+        fee_logger.info(f"apply_fees_to_booking returned {len(applied_fees)} fees for booking {new_booking.id}")
+    except Exception as e:
+        fee_logger.error(f"Error applying fees to booking {new_booking.id}: {str(e)}")
+        import traceback
+        fee_logger.error(traceback.format_exc())
     
     if admin_token and engineer.calendar_email:
         end_time = booking_data.scheduled_date + timedelta(hours=booking_data.duration_hours)
