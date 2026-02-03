@@ -10,7 +10,7 @@ from app.models.database_models import (
     Booking, BookingStatus, Engineer, User, SystemConfig, Fee, Product, 
     ExpediteRequest, ExpediteRequestStatus, TemplateType,
     FeeProductAssignment, FeeChangeTypeAssignment, BookingFee, BookingFeeStatus, FeeApplyMode,
-    BankHoliday
+    BankHoliday, ChangeType
 )
 from app.schemas.schemas import BookingCreate, BookingUpdate, BookingResponse, ExpediteRequestCreate, ExpediteRequestResponse
 from app.services.auth import decode_access_token
@@ -877,6 +877,10 @@ async def preview_applicable_fees(
     - indicator_fees: Fees that may apply later (late cancellation/amendment) - NOT in total
     - total: Sum of applicable_fees only
     """
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"preview_applicable_fees called: product_id={product_id}, change_type_id={change_type_id}, scheduled_date={scheduled_date}, duration_hours={duration_hours}")
+    
     await get_current_user(authorization, db)
     
     # Parse the scheduled date
@@ -885,6 +889,8 @@ async def preview_applicable_fees(
     except ValueError:
         parsed_date = datetime.strptime(scheduled_date, "%Y-%m-%dT%H:%M")
     
+    logger.info(f"Parsed date: {parsed_date}, weekday: {parsed_date.weekday()}")
+    
     # Get the change type to check minimum notice period
     change_type_result = await db.execute(select(ChangeType).where(ChangeType.id == change_type_id))
     change_type = change_type_result.scalar_one_or_none()
@@ -892,6 +898,8 @@ async def preview_applicable_fees(
     # Get the product
     product_result = await db.execute(select(Product).where(Product.id == product_id))
     product = product_result.scalar_one_or_none()
+    
+    logger.info(f"Product: {product.name if product else 'None'}, Change Type: {change_type.name if change_type else 'None'}")
     
     # Calculate hours until booking
     now = datetime.utcnow()
@@ -911,6 +919,8 @@ async def preview_applicable_fees(
     )
     fees = result.scalars().all()
     
+    logger.info(f"Found {len(fees)} active fees in database")
+    
     # Get bank holidays for checking
     holidays_result = await db.execute(select(BankHoliday))
     bank_holidays = [h.date.date() for h in holidays_result.scalars().all()]
@@ -926,9 +936,14 @@ async def preview_applicable_fees(
         fee_type_lower = fee.fee_type.lower() if fee.fee_type else ""
         fee_name_lower = fee.name.lower() if fee.name else ""
         
+        logger.info(f"Evaluating fee: {fee.name} (type={fee.fee_type}, amount={fee.amount})")
+        logger.info(f"  - apply_on_weekends={fee.apply_on_weekends}, apply_on_bank_holidays={fee.apply_on_bank_holidays}, apply_outside_hours={fee.apply_outside_hours}")
+        
         # Step 1: Check if fee applies to this product/change type
         product_ids = [a.product_id for a in fee.product_assignments]
         change_type_ids = [a.change_type_id for a in fee.change_type_assignments]
+        
+        logger.info(f"  - product_assignments: {product_ids}, change_type_assignments: {change_type_ids}")
         
         has_product_restriction = len(product_ids) > 0
         has_change_type_restriction = len(change_type_ids) > 0
@@ -937,6 +952,8 @@ async def preview_applicable_fees(
         # Check if fee matches by assignment
         product_matches = product_id in product_ids if has_product_restriction else False
         change_type_matches = change_type_id in change_type_ids if has_change_type_restriction else False
+        
+        logger.info(f"  - product_matches={product_matches}, change_type_matches={change_type_matches}")
         
         # Also check if fee_type or fee_name matches the change type name (fallback matching)
         fee_type_matches_change = change_type_name and (
@@ -951,28 +968,44 @@ async def preview_applicable_fees(
             product_name in fee_name_lower
         )
         
+        logger.info(f"  - fee_type_matches_change={fee_type_matches_change}, fee_type_matches_product={fee_type_matches_product}")
+        
         # Determine if fee applies based on assignments OR name matching
-        if has_product_restriction or has_change_type_restriction:
-            # Fee has explicit assignments - use those
-            base_applies = product_matches or change_type_matches
+        if has_product_restriction and has_change_type_restriction:
+            # Fee has BOTH product AND change type restrictions - BOTH must match
+            base_applies = product_matches and change_type_matches
+            logger.info(f"  - Using BOTH assignment matching (AND): base_applies={base_applies}")
+        elif has_product_restriction:
+            # Fee has only product restriction
+            base_applies = product_matches
+            logger.info(f"  - Using product assignment matching: base_applies={base_applies}")
+        elif has_change_type_restriction:
+            # Fee has only change type restriction
+            base_applies = change_type_matches
+            logger.info(f"  - Using change type assignment matching: base_applies={base_applies}")
         elif has_time_conditions:
             # Time-based fee with no restrictions - applies globally when time conditions met
             base_applies = True
+            logger.info(f"  - Time-based fee with no restrictions: base_applies={base_applies}")
         elif fee_type_matches_change or fee_type_matches_product:
             # Fee name/type matches the change type or product - apply it
             base_applies = True
+            logger.info(f"  - Name matching: base_applies={base_applies}")
         else:
             # No restrictions, no time conditions, no name match - skip
             base_applies = False
+            logger.info(f"  - No match: base_applies={base_applies}")
         
         # Skip if fee doesn't apply
         if not base_applies:
+            logger.info(f"  - SKIPPING fee (base_applies=False)")
             continue
         
         # Step 2: Handle special fee types (Late Cancellation/Amendment as indicators)
         
-        # Late Cancellation fees - show as indicator only
-        if "cancellation" in fee_type_lower or "cancel" in fee_type_lower:
+        # Late Cancellation fees - show as indicator only (check both fee_type and fee_name)
+        if "cancellation" in fee_type_lower or "cancel" in fee_type_lower or \
+           "cancellation" in fee_name_lower or "cancel" in fee_name_lower:
             indicator_fees.append({
                 "fee_id": fee.id,
                 "name": fee.name,
@@ -984,8 +1017,9 @@ async def preview_applicable_fees(
             })
             continue
         
-        # Late Amendment fees - show as indicator only
-        if "amendment" in fee_type_lower or "amend" in fee_type_lower:
+        # Late Amendment fees - show as indicator only (check both fee_type and fee_name)
+        if "amendment" in fee_type_lower or "amend" in fee_type_lower or \
+           "amendment" in fee_name_lower or "amend" in fee_name_lower:
             indicator_fees.append({
                 "fee_id": fee.id,
                 "name": fee.name,
