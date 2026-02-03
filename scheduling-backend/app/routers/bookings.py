@@ -167,6 +167,115 @@ def calculate_out_of_hours_duration(
         return 0.0
 
 
+async def apply_late_fee_to_booking(
+    db: AsyncSession,
+    booking_id: int,
+    product_id: int,
+    change_type_id: int,
+    fee_type_keyword: str  # "cancellation" or "amendment"
+) -> List[BookingFee]:
+    """
+    Apply late cancellation or late amendment fees to a booking.
+    Finds fees that match the product/change type and contain the fee_type_keyword.
+    Returns list of BookingFee objects created.
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    applied_fees = []
+    
+    # Get all active fees with their assignments
+    result = await db.execute(
+        select(Fee).where(Fee.is_active == True)
+        .options(
+            selectinload(Fee.product_assignments),
+            selectinload(Fee.change_type_assignments)
+        )
+    )
+    fees = result.scalars().all()
+    
+    # Get the change type and product for name matching
+    change_type_result = await db.execute(select(ChangeType).where(ChangeType.id == change_type_id))
+    change_type = change_type_result.scalar_one_or_none()
+    
+    product_result = await db.execute(select(Product).where(Product.id == product_id))
+    product = product_result.scalar_one_or_none()
+    
+    change_type_name = change_type.name.lower() if change_type else ""
+    product_name = product.name.lower() if product else ""
+    
+    logger.info(f"apply_late_fee_to_booking: booking_id={booking_id}, fee_type_keyword={fee_type_keyword}")
+    
+    for fee in fees:
+        fee_type_lower = fee.fee_type.lower() if fee.fee_type else ""
+        fee_name_lower = fee.name.lower() if fee.name else ""
+        
+        # Only consider fees that match the keyword (cancellation or amendment)
+        if fee_type_keyword not in fee_type_lower and fee_type_keyword not in fee_name_lower:
+            continue
+        
+        logger.info(f"Evaluating late fee: {fee.name} (type={fee.fee_type}, amount={fee.amount})")
+        
+        # Check if fee applies to this product/change type via assignments
+        product_ids = [a.product_id for a in fee.product_assignments]
+        change_type_ids = [a.change_type_id for a in fee.change_type_assignments]
+        
+        has_product_restriction = len(product_ids) > 0
+        has_change_type_restriction = len(change_type_ids) > 0
+        
+        # Check if fee matches by assignment
+        product_matches = product_id in product_ids if has_product_restriction else False
+        change_type_matches = change_type_id in change_type_ids if has_change_type_restriction else False
+        
+        # Fallback name matching
+        fee_type_matches_change = change_type_name and (
+            change_type_name in fee_type_lower or 
+            change_type_name in fee_name_lower or
+            fee_type_lower in change_type_name
+        )
+        
+        fee_type_matches_product = product_name and (
+            product_name in fee_type_lower or 
+            product_name in fee_name_lower
+        )
+        
+        # Determine if fee applies
+        if has_product_restriction and has_change_type_restriction:
+            base_applies = product_matches and change_type_matches
+        elif has_product_restriction:
+            base_applies = product_matches
+        elif has_change_type_restriction:
+            base_applies = change_type_matches
+        elif fee_type_matches_change or fee_type_matches_product:
+            base_applies = True
+        else:
+            # No restrictions - fee applies globally for this type
+            base_applies = True
+        
+        if not base_applies:
+            logger.info(f"  - SKIPPING fee (doesn't match product/change type)")
+            continue
+        
+        fee_amount = fee.amount
+        
+        if fee_amount > 0:
+            fee_status = BookingFeeStatus.APPROVED
+            if fee.apply_mode == FeeApplyMode.APPROVAL:
+                fee_status = BookingFeeStatus.PENDING
+            
+            booking_fee = BookingFee(
+                booking_id=booking_id,
+                fee_id=fee.id,
+                amount=fee_amount,
+                status=fee_status
+            )
+            db.add(booking_fee)
+            applied_fees.append(booking_fee)
+            logger.info(f"Applied late fee: {fee.name} (amount={fee_amount}, status={fee_status})")
+    
+    return applied_fees
+
+
 async def apply_fees_to_booking(
     db: AsyncSession,
     booking_id: int,
@@ -710,9 +819,20 @@ async def update_booking(
     
     is_late_change = datetime.utcnow() > deadline
     
-    if is_late_change and user.role.value != "admin":
-        _, late_fee = await calculate_fees(db, booking, False, True)
-        booking.cancellation_fee += late_fee
+    # Apply late amendment fees if within notice period
+    amendment_fees_applied = []
+    if is_late_change:
+        amendment_fees_applied = await apply_late_fee_to_booking(
+            db,
+            booking.id,
+            booking.product_id,
+            booking.change_type_id,
+            "amend"  # Matches "amendment", "amend", etc.
+        )
+        # Also set the legacy cancellation_fee field for backwards compatibility
+        if amendment_fees_applied:
+            total_amendment_fee = sum(f.amount for f in amendment_fees_applied)
+            booking.cancellation_fee += total_amendment_fee
     
     if update_data.scheduled_date:
         booking.scheduled_date = update_data.scheduled_date
@@ -837,13 +957,20 @@ async def cancel_booking(
     
     is_late_cancellation = datetime.utcnow() > deadline
     
-    if is_late_cancellation and user.role.value != "admin":
-        result = await db.execute(
-            select(Fee).where(Fee.fee_type == "cancellation", Fee.is_active == True)
+    # Apply late cancellation fees if within notice period
+    cancellation_fees_applied = []
+    if is_late_cancellation:
+        cancellation_fees_applied = await apply_late_fee_to_booking(
+            db,
+            booking.id,
+            booking.product_id,
+            booking.change_type_id,
+            "cancel"  # Matches "cancellation", "cancel", etc.
         )
-        fee = result.scalar_one_or_none()
-        if fee:
-            booking.cancellation_fee = fee.amount
+        # Also set the legacy cancellation_fee field for backwards compatibility
+        if cancellation_fees_applied:
+            total_cancellation_fee = sum(f.amount for f in cancellation_fees_applied)
+            booking.cancellation_fee = total_cancellation_fee
     
     booking.status = BookingStatus.CANCELLED
     
