@@ -897,36 +897,67 @@ async def preview_applicable_fees(
     applicable_fees = []
     
     for fee in fees:
-        should_apply = False
-        is_time_based_fee = False
-        
-        # Check if fee applies to this product
+        # Step 1: Check if fee applies to this product/change type
         product_ids = [a.product_id for a in fee.product_assignments]
-        if product_id in product_ids:
-            should_apply = True
-        
-        # Check if fee applies to this change type
         change_type_ids = [a.change_type_id for a in fee.change_type_assignments]
-        if change_type_id in change_type_ids:
-            should_apply = True
         
-        # Check time-based conditions
+        # Fee must match product OR change type (if restrictions are set)
+        # If no restrictions are set, fee applies to all
+        has_product_restriction = len(product_ids) > 0
+        has_change_type_restriction = len(change_type_ids) > 0
+        
+        product_matches = product_id in product_ids if has_product_restriction else True
+        change_type_matches = change_type_id in change_type_ids if has_change_type_restriction else True
+        
+        # If fee has both restrictions, either must match
+        # If fee has only one restriction, that one must match
+        # If fee has no restrictions, it's a time-based fee only
+        if has_product_restriction and has_change_type_restriction:
+            base_applies = product_matches or change_type_matches
+        elif has_product_restriction:
+            base_applies = product_matches
+        elif has_change_type_restriction:
+            base_applies = change_type_matches
+        else:
+            # No product/change type restrictions - this is a time-based fee
+            base_applies = False  # Will be set by time conditions below
+        
+        # Step 2: Check time-based conditions
+        is_time_based_fee = False
+        time_condition_met = False
+        has_time_conditions = fee.apply_on_weekends or fee.apply_on_bank_holidays or fee.apply_outside_hours
+        
         # Check weekend condition
         if fee.apply_on_weekends and parsed_date.weekday() >= 5:
-            should_apply = True
+            time_condition_met = True
             is_time_based_fee = True
         
         # Check bank holiday condition
         if fee.apply_on_bank_holidays and parsed_date.date() in bank_holidays:
-            should_apply = True
+            time_condition_met = True
             is_time_based_fee = True
         
         # Check out-of-hours condition
         if fee.apply_outside_hours and is_outside_working_hours(
             parsed_date, fee.outside_hours_start, fee.outside_hours_end
         ):
-            should_apply = True
+            time_condition_met = True
             is_time_based_fee = True
+        
+        # Step 3: Determine if fee should apply
+        # If fee has time conditions, those must be met
+        # If fee has product/change type restrictions, those must also be met
+        if has_time_conditions:
+            # Time-based fee: time condition must be met
+            # AND if there are product/change type restrictions, those must also match
+            if has_product_restriction or has_change_type_restriction:
+                should_apply = time_condition_met and base_applies
+            else:
+                # Pure time-based fee (no product/change type restrictions)
+                should_apply = time_condition_met
+        else:
+            # Non-time-based fee: just check product/change type
+            should_apply = base_applies
         
         if should_apply:
             # Calculate the fee amount
