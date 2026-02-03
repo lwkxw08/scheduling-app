@@ -645,6 +645,9 @@ class ExpediteRequestResponse(BaseModel):
     customer_attachment_url: Optional[str]
     expedite_fee: float
     fee_acknowledged: bool
+    fee_acknowledged_at: Optional[datetime] = None
+    fee_acknowledged_by_user_id: Optional[int] = None
+    fee_acknowledged_by_email: Optional[str] = None
     status: ExpediteRequestStatus
     admin_notes: Optional[str]
     assigned_engineer_id: Optional[int]

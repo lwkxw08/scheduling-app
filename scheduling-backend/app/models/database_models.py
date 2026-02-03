@@ -423,6 +423,8 @@ class ExpediteRequest(Base):
     customer_attachment_url = Column(String(1000), nullable=True)
     expedite_fee = Column(Float, nullable=False)
     fee_acknowledged = Column(Boolean, default=False)
+    fee_acknowledged_at = Column(DateTime, nullable=True)
+    fee_acknowledged_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     status = Column(SQLEnum(ExpediteRequestStatus), default=ExpediteRequestStatus.PENDING)
     admin_notes = Column(Text, nullable=True)
     assigned_engineer_id = Column(Integer, ForeignKey("engineers.id"), nullable=True)
@@ -431,6 +433,7 @@ class ExpediteRequest(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     requester = relationship("User", foreign_keys=[requester_id])
+    fee_acknowledged_by = relationship("User", foreign_keys=[fee_acknowledged_by_user_id])
     product = relationship("Product", back_populates="expedite_requests")
     change_type = relationship("ChangeType")
     assigned_engineer = relationship("Engineer", foreign_keys=[assigned_engineer_id])

@@ -2047,10 +2047,11 @@ async def get_expedite_requests(
     
     query = select(ExpediteRequest).options(
         selectinload(ExpediteRequest.requester),
+        selectinload(ExpediteRequest.fee_acknowledged_by),
         selectinload(ExpediteRequest.product),
         selectinload(ExpediteRequest.change_type),
         selectinload(ExpediteRequest.assigned_engineer).selectinload(Engineer.user),
-            selectinload(ExpediteRequest.assigned_engineer).selectinload(Engineer.schedules)
+        selectinload(ExpediteRequest.assigned_engineer).selectinload(Engineer.schedules)
     ).order_by(ExpediteRequest.created_at.desc())
     
     if status_filter:
@@ -2467,10 +2468,11 @@ async def get_expedite_requests_summary_report(
     
     query = select(ExpediteRequest).options(
         selectinload(ExpediteRequest.requester),
+        selectinload(ExpediteRequest.fee_acknowledged_by),
         selectinload(ExpediteRequest.product),
         selectinload(ExpediteRequest.change_type),
         selectinload(ExpediteRequest.assigned_engineer).selectinload(Engineer.user),
-            selectinload(ExpediteRequest.assigned_engineer).selectinload(Engineer.schedules)
+        selectinload(ExpediteRequest.assigned_engineer).selectinload(Engineer.schedules)
     )
     
     if start_date:
@@ -2491,6 +2493,8 @@ async def get_expedite_requests_summary_report(
         "status": r.status.value if hasattr(r.status, 'value') else r.status,
         "expedite_fee": r.expedite_fee,
         "fee_acknowledged": r.fee_acknowledged,
+        "fee_acknowledged_at": r.fee_acknowledged_at.isoformat() if r.fee_acknowledged_at else None,
+        "fee_acknowledged_by_email": r.fee_acknowledged_by.email if r.fee_acknowledged_by else None,
         "product_name": r.product.name if r.product else None,
         "change_type_name": r.change_type.name if r.change_type else None,
         "requester_name": r.requester.full_name if r.requester else None,

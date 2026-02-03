@@ -1255,6 +1255,8 @@ export default function AdminPage() {
           'Status': r.status,
           'Expedite Fee': r.expedite_fee,
           'Fee Acknowledged': r.fee_acknowledged ? 'Yes' : 'No',
+          'Fee Acknowledged At': r.fee_acknowledged_at || '',
+          'Fee Acknowledged By': r.fee_acknowledged_by_email || '',
           'Product': r.product_name,
           'Change Type': r.change_type_name,
           'Requester': r.requester_name,

@@ -778,6 +778,8 @@ async def create_expedite_request(
         customer_attachment_url=request_data.customer_attachment_url,
         expedite_fee=expedite_fee,
         fee_acknowledged=request_data.fee_acknowledged,
+        fee_acknowledged_at=datetime.utcnow() if request_data.fee_acknowledged else None,
+        fee_acknowledged_by_user_id=user.id if request_data.fee_acknowledged else None,
         status=ExpediteRequestStatus.PENDING
     )
     
