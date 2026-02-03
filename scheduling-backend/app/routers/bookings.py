@@ -872,7 +872,10 @@ async def preview_applicable_fees(
 ):
     """
     Preview what fees would apply to a booking without creating them.
-    Returns list of fees with their amounts and approval requirements.
+    Returns:
+    - applicable_fees: Fees that apply to this booking (included in total)
+    - indicator_fees: Fees that may apply later (late cancellation/amendment) - NOT in total
+    - total: Sum of applicable_fees only
     """
     await get_current_user(authorization, db)
     
@@ -881,6 +884,22 @@ async def preview_applicable_fees(
         parsed_date = datetime.fromisoformat(scheduled_date.replace('Z', '+00:00'))
     except ValueError:
         parsed_date = datetime.strptime(scheduled_date, "%Y-%m-%dT%H:%M")
+    
+    # Get the change type to check minimum notice period
+    change_type_result = await db.execute(select(ChangeType).where(ChangeType.id == change_type_id))
+    change_type = change_type_result.scalar_one_or_none()
+    
+    # Get the product
+    product_result = await db.execute(select(Product).where(Product.id == product_id))
+    product = product_result.scalar_one_or_none()
+    
+    # Calculate hours until booking
+    now = datetime.utcnow()
+    hours_until_booking = (parsed_date - now).total_seconds() / 3600
+    
+    # Check if this is an expedite booking (within minimum notice period)
+    minimum_notice_hours = change_type.minimum_notice_hours if change_type else 0
+    is_expedite_booking = hours_until_booking < minimum_notice_hours if minimum_notice_hours > 0 else False
     
     # Get all active fees with their assignments
     result = await db.execute(
@@ -896,105 +915,135 @@ async def preview_applicable_fees(
     holidays_result = await db.execute(select(BankHoliday))
     bank_holidays = [h.date.date() for h in holidays_result.scalars().all()]
     
-    applicable_fees = []
+    applicable_fees = []  # Fees included in total
+    indicator_fees = []   # Fees shown as warnings (late cancellation/amendment)
     
     for fee in fees:
+        fee_type_lower = fee.fee_type.lower() if fee.fee_type else ""
+        
         # Step 1: Check if fee applies to this product/change type
         product_ids = [a.product_id for a in fee.product_assignments]
         change_type_ids = [a.change_type_id for a in fee.change_type_assignments]
         
-        # Fee must match product OR change type (if restrictions are set)
-        # If no restrictions are set, fee applies to all
         has_product_restriction = len(product_ids) > 0
         has_change_type_restriction = len(change_type_ids) > 0
         
-        product_matches = product_id in product_ids if has_product_restriction else True
-        change_type_matches = change_type_id in change_type_ids if has_change_type_restriction else True
+        # Fee must match product AND/OR change type based on what's configured
+        product_matches = product_id in product_ids if has_product_restriction else False
+        change_type_matches = change_type_id in change_type_ids if has_change_type_restriction else False
         
-        # If fee has both restrictions, either must match
-        # If fee has only one restriction, that one must match
-        # If fee has no restrictions, it's a time-based fee only
+        # Determine if fee is assigned to this booking's product/change type
         if has_product_restriction and has_change_type_restriction:
+            # Fee has both restrictions - must match at least one
             base_applies = product_matches or change_type_matches
         elif has_product_restriction:
+            # Fee only has product restriction - must match product
             base_applies = product_matches
         elif has_change_type_restriction:
+            # Fee only has change type restriction - must match change type
             base_applies = change_type_matches
         else:
-            # No product/change type restrictions - this is a time-based fee
-            base_applies = False  # Will be set by time conditions below
+            # No product/change type restrictions - check if it's a time-based fee
+            # Time-based fees without product/change type restrictions apply globally
+            base_applies = fee.apply_on_weekends or fee.apply_on_bank_holidays or fee.apply_outside_hours
         
-        # Step 2: Check time-based conditions
+        # Skip if fee doesn't apply to this product/change type
+        if not base_applies:
+            continue
+        
+        # Step 2: Handle special fee types
+        
+        # Late Cancellation fees - show as indicator only
+        if "cancellation" in fee_type_lower or "cancel" in fee_type_lower:
+            indicator_fees.append({
+                "fee_id": fee.id,
+                "name": fee.name,
+                "fee_type": fee.fee_type,
+                "amount": fee.amount,
+                "requires_approval": fee.apply_mode == FeeApplyMode.APPROVAL,
+                "is_indicator": True,
+                "indicator_reason": "Applied if booking is cancelled with insufficient notice"
+            })
+            continue
+        
+        # Late Amendment fees - show as indicator only
+        if "amendment" in fee_type_lower or "amend" in fee_type_lower:
+            indicator_fees.append({
+                "fee_id": fee.id,
+                "name": fee.name,
+                "fee_type": fee.fee_type,
+                "amount": fee.amount,
+                "requires_approval": fee.apply_mode == FeeApplyMode.APPROVAL,
+                "is_indicator": True,
+                "indicator_reason": "Applied if booking is amended with insufficient notice"
+            })
+            continue
+        
+        # Expedite fees - only apply if booking is within minimum notice period
+        if "expedite" in fee_type_lower:
+            if not is_expedite_booking:
+                continue  # Skip expedite fee if not within notice period
+        
+        # Step 3: Check time-based conditions
         is_time_based_fee = False
         time_condition_met = False
         has_time_conditions = fee.apply_on_weekends or fee.apply_on_bank_holidays or fee.apply_outside_hours
         
-        # Check weekend condition
-        if fee.apply_on_weekends and parsed_date.weekday() >= 5:
-            time_condition_met = True
-            is_time_based_fee = True
-        
-        # Check bank holiday condition
-        if fee.apply_on_bank_holidays and parsed_date.date() in bank_holidays:
-            time_condition_met = True
-            is_time_based_fee = True
-        
-        # Check out-of-hours condition
-        if fee.apply_outside_hours and is_outside_working_hours(
-            parsed_date, fee.outside_hours_start, fee.outside_hours_end
-        ):
-            time_condition_met = True
-            is_time_based_fee = True
-        
-        # Step 3: Determine if fee should apply
-        # If fee has time conditions, those must be met
-        # If fee has product/change type restrictions, those must also be met
         if has_time_conditions:
-            # Time-based fee: time condition must be met
-            # AND if there are product/change type restrictions, those must also match
-            if has_product_restriction or has_change_type_restriction:
-                should_apply = time_condition_met and base_applies
-            else:
-                # Pure time-based fee (no product/change type restrictions)
-                should_apply = time_condition_met
-        else:
-            # Non-time-based fee: just check product/change type
-            should_apply = base_applies
+            # Check weekend condition
+            if fee.apply_on_weekends and parsed_date.weekday() >= 5:
+                time_condition_met = True
+                is_time_based_fee = True
+            
+            # Check bank holiday condition
+            if fee.apply_on_bank_holidays and parsed_date.date() in bank_holidays:
+                time_condition_met = True
+                is_time_based_fee = True
+            
+            # Check out-of-hours condition
+            if fee.apply_outside_hours and is_outside_working_hours(
+                parsed_date, fee.outside_hours_start, fee.outside_hours_end
+            ):
+                time_condition_met = True
+                is_time_based_fee = True
+            
+            # If fee has time conditions but none are met, skip it
+            if not time_condition_met:
+                continue
         
-        if should_apply:
-            # Calculate the fee amount
-            fee_amount = fee.amount
-            
-            # If charge_per_hour is enabled, calculate based on duration
-            if getattr(fee, 'charge_per_hour', False) and fee.charge_per_hour:
-                if is_time_based_fee:
-                    qualifying_hours = calculate_out_of_hours_duration(
-                        parsed_date,
-                        duration_hours,
-                        fee.outside_hours_start,
-                        fee.outside_hours_end,
-                        bank_holidays,
-                        fee.apply_on_weekends,
-                        fee.apply_on_bank_holidays
-                    )
-                    fee_amount = fee.amount * qualifying_hours
-                else:
-                    fee_amount = fee.amount * duration_hours
-            
-            if fee_amount > 0:
-                applicable_fees.append({
-                    "fee_id": fee.id,
-                    "name": fee.name,
-                    "fee_type": fee.fee_type,
-                    "amount": fee_amount,
-                    "requires_approval": fee.apply_mode == FeeApplyMode.APPROVAL,
-                    "is_per_hour": getattr(fee, 'charge_per_hour', False) and fee.charge_per_hour
-                })
+        # Step 4: Calculate fee amount
+        fee_amount = fee.amount
+        
+        # If charge_per_hour is enabled, calculate based on duration
+        if getattr(fee, 'charge_per_hour', False) and fee.charge_per_hour:
+            if is_time_based_fee:
+                qualifying_hours = calculate_out_of_hours_duration(
+                    parsed_date,
+                    duration_hours,
+                    fee.outside_hours_start,
+                    fee.outside_hours_end,
+                    bank_holidays,
+                    fee.apply_on_weekends,
+                    fee.apply_on_bank_holidays
+                )
+                fee_amount = fee.amount * qualifying_hours
+            else:
+                fee_amount = fee.amount * duration_hours
+        
+        if fee_amount > 0:
+            applicable_fees.append({
+                "fee_id": fee.id,
+                "name": fee.name,
+                "fee_type": fee.fee_type,
+                "amount": fee_amount,
+                "requires_approval": fee.apply_mode == FeeApplyMode.APPROVAL,
+                "is_per_hour": getattr(fee, 'charge_per_hour', False) and fee.charge_per_hour
+            })
     
-    # Also include the product's expedite fee if applicable
-    product_result = await db.execute(select(Product).where(Product.id == product_id))
-    product = product_result.scalar_one_or_none()
-    if product and product.expedite_fee and product.expedite_fee > 0:
+    # Add product's expedite fee ONLY if:
+    # 1. Product has an expedite fee set
+    # 2. This is an expedite booking (within minimum notice period)
+    if product and product.expedite_fee and product.expedite_fee > 0 and is_expedite_booking:
         applicable_fees.append({
             "fee_id": None,
             "name": f"{product.name} Expedite Fee",
@@ -1004,9 +1053,14 @@ async def preview_applicable_fees(
             "is_per_hour": False
         })
     
+    # Calculate total from applicable fees only (not indicators)
     total = sum(f["amount"] for f in applicable_fees)
     
     return {
         "fees": applicable_fees,
-        "total": total
+        "indicator_fees": indicator_fees,
+        "total": total,
+        "is_expedite_booking": is_expedite_booking,
+        "hours_until_booking": hours_until_booking,
+        "minimum_notice_hours": minimum_notice_hours
     }

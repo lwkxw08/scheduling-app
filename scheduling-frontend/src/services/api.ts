@@ -601,7 +601,19 @@ class ApiService {
         requires_approval: boolean;
         is_per_hour: boolean;
       }>;
+      indicator_fees: Array<{
+        fee_id: number | null;
+        name: string;
+        fee_type: string;
+        amount: number;
+        requires_approval: boolean;
+        is_indicator: boolean;
+        indicator_reason: string;
+      }>;
       total: number;
+      is_expedite_booking: boolean;
+      hours_until_booking: number;
+      minimum_notice_hours: number;
     }>(`/bookings/preview-fees?${params.toString()}`, { method: 'POST' });
   }
 

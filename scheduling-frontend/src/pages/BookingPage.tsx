@@ -62,6 +62,15 @@ export default function BookingPage() {
     requires_approval: boolean;
     is_per_hour: boolean;
   }>>([]);
+  const [indicatorFees, setIndicatorFees] = useState<Array<{
+    fee_id: number | null;
+    name: string;
+    fee_type: string;
+    amount: number;
+    requires_approval: boolean;
+    is_indicator: boolean;
+    indicator_reason: string;
+  }>>([]);
   const [feesTotal, setFeesTotal] = useState<number>(0);
   const [isLoadingFees, setIsLoadingFees] = useState(false);
 
@@ -262,11 +271,13 @@ export default function BookingPage() {
         duration_hours: duration || 1,
       });
       
-      setApplicableFees(result.fees);
-      setFeesTotal(result.total);
+      setApplicableFees(result.fees || []);
+      setIndicatorFees(result.indicator_fees || []);
+      setFeesTotal(result.total || 0);
     } catch (err) {
       console.error('Failed to load applicable fees:', err);
       setApplicableFees([]);
+      setIndicatorFees([]);
       setFeesTotal(0);
     } finally {
       setIsLoadingFees(false);
@@ -813,6 +824,26 @@ export default function BookingPage() {
                 </div>
               ) : (
                 <p className="text-sm text-amber-700">No additional fees apply to this request.</p>
+              )}
+              
+              {indicatorFees.length > 0 && (
+                <div className="mt-4 pt-4 border-t border-amber-200">
+                  <h5 className="text-sm font-medium text-gray-600 mb-2">Potential Additional Fees</h5>
+                  <p className="text-xs text-gray-500 mb-2">These fees may apply if you cancel or amend this booking with insufficient notice:</p>
+                  {indicatorFees.map((fee, index) => (
+                    <div key={index} className="flex justify-between items-center text-sm text-gray-600">
+                      <span>
+                        {fee.name}
+                        {fee.requires_approval && (
+                          <span className="ml-2 text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded">
+                            Requires Approval
+                          </span>
+                        )}
+                      </span>
+                      <span className="font-medium">£{fee.amount.toFixed(2)}</span>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
 
