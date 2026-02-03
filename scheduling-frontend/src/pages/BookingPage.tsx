@@ -73,6 +73,10 @@ export default function BookingPage() {
   }>>([]);
   const [feesTotal, setFeesTotal] = useState<number>(0);
   const [isLoadingFees, setIsLoadingFees] = useState(false);
+  
+  // Fee acceptance state for regular bookings
+  const [feesAccepted, setFeesAccepted] = useState(false);
+  const [feeAcceptanceTimestamp, setFeeAcceptanceTimestamp] = useState<string | null>(null);
 
   useEffect(() => {
     loadFormData();
@@ -645,6 +649,9 @@ export default function BookingPage() {
                             onClick={() => {
                               setSelectedEngineerId(engineer.engineer_id);
                               setSelectedSlot(slot.start_time);
+                              setFeesAccepted(false);
+                              setFeeAcceptanceTimestamp(null);
+                              loadApplicableFees(slot.start_time);
                             }}
                             className="text-sm"
                           >
@@ -733,13 +740,98 @@ export default function BookingPage() {
                 </div>
               )}
 
+              {/* Fee Display Section - shown when a slot is selected */}
+              {selectedEngineerId && selectedSlot && (
+                <div className="border-t pt-6">
+                  <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                    <h4 className="font-medium text-blue-800 mb-3">Applicable Fees</h4>
+                    {isLoadingFees ? (
+                      <div className="flex items-center gap-2 text-blue-700">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span className="text-sm">Loading fees...</span>
+                      </div>
+                    ) : applicableFees.length > 0 ? (
+                      <div className="space-y-2">
+                        {applicableFees.map((fee, index) => (
+                          <div key={index} className="flex justify-between items-center text-sm">
+                            <span className="text-blue-700">
+                              {fee.name}
+                              {fee.requires_approval && (
+                                <span className="ml-2 text-xs bg-blue-200 text-blue-800 px-2 py-0.5 rounded">
+                                  Requires Approval
+                                </span>
+                              )}
+                            </span>
+                            <span className="font-medium text-blue-800">£{fee.amount.toFixed(2)}</span>
+                          </div>
+                        ))}
+                        <div className="border-t border-blue-300 pt-2 mt-2 flex justify-between items-center">
+                          <span className="font-medium text-blue-800">Total</span>
+                          <span className="font-bold text-blue-900">£{feesTotal.toFixed(2)}</span>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-sm text-blue-700">No additional fees apply to this booking.</p>
+                    )}
+                    
+                    {indicatorFees.length > 0 && (
+                      <div className="mt-4 pt-4 border-t border-blue-200">
+                        <h5 className="text-sm font-medium text-gray-600 mb-2">Potential Additional Fees</h5>
+                        <p className="text-xs text-gray-500 mb-2">These fees may apply if you cancel or amend this booking with insufficient notice:</p>
+                        {indicatorFees.map((fee, index) => (
+                          <div key={index} className="flex justify-between items-center text-sm text-gray-600">
+                            <span>
+                              {fee.name}
+                              {fee.requires_approval && (
+                                <span className="ml-2 text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded">
+                                  Requires Approval
+                                </span>
+                              )}
+                            </span>
+                            <span className="font-medium">£{fee.amount.toFixed(2)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Fee Acceptance Checkbox - only shown if there are fees */}
+                  {applicableFees.length > 0 && (
+                    <div className="mt-4 flex items-start space-x-2">
+                      <Checkbox
+                        id="feesAccepted"
+                        checked={feesAccepted}
+                        onCheckedChange={(checked) => {
+                          setFeesAccepted(checked as boolean);
+                          if (checked) {
+                            setFeeAcceptanceTimestamp(new Date().toISOString());
+                          } else {
+                            setFeeAcceptanceTimestamp(null);
+                          }
+                        }}
+                      />
+                      <div>
+                        <Label htmlFor="feesAccepted" className="text-sm font-medium">
+                          I acknowledge and accept the fee total of £{feesTotal.toFixed(2)}
+                        </Label>
+                        {feeAcceptanceTimestamp && (
+                          <p className="text-xs text-gray-500 mt-1">
+                            Accepted at: {new Date(feeAcceptanceTimestamp).toLocaleString()}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="flex justify-between">
                 <Button variant="outline" onClick={() => setStep(2)}>
                   Back
                 </Button>
                 <Button
                   onClick={handleSubmitBooking}
-                  disabled={isLoading || !selectedEngineerId || !selectedSlot}
+                  disabled={isLoading || !selectedEngineerId || !selectedSlot || (applicableFees.length > 0 && !feesAccepted)}
                 >
                   {isLoading ? 'Creating Booking...' : 'Confirm Booking'}
                 </Button>

@@ -372,8 +372,11 @@ async def create_engineer_unavailability(
     if not engineer:
         raise HTTPException(status_code=404, detail="Engineer profile not found")
     
+    # Use current user's engineer_id if not provided
+    target_engineer_id = unavailability.engineer_id if unavailability.engineer_id else engineer.id
+    
     # Engineers can only mark themselves unavailable
-    if unavailability.engineer_id != engineer.id and user.role != UserRole.ADMIN:
+    if target_engineer_id != engineer.id and user.role != UserRole.ADMIN:
         raise HTTPException(status_code=403, detail="You can only mark yourself as unavailable")
     
     # Validate dates
@@ -381,7 +384,7 @@ async def create_engineer_unavailability(
         raise HTTPException(status_code=400, detail="End datetime must be after start datetime")
     
     entry = EngineerUnavailability(
-        engineer_id=unavailability.engineer_id,
+        engineer_id=target_engineer_id,
         start_datetime=unavailability.start_datetime,
         end_datetime=unavailability.end_datetime,
         reason=unavailability.reason,

@@ -665,7 +665,7 @@ class ExpediteRequestResponse(BaseModel):
 
 # Engineer Unavailability Schemas
 class EngineerUnavailabilityCreate(BaseModel):
-    engineer_id: int
+    engineer_id: Optional[int] = None  # Optional - will use current user's engineer_id if not provided
     start_datetime: datetime
     end_datetime: datetime
     reason: Optional[str] = None
