@@ -379,9 +379,15 @@ async def create_engineer_unavailability(
     if target_engineer_id != engineer.id and user.role != UserRole.ADMIN:
         raise HTTPException(status_code=403, detail="You can only mark yourself as unavailable")
     
-    # Validate dates
-    if unavailability.end_datetime <= unavailability.start_datetime:
-        raise HTTPException(status_code=400, detail="End datetime must be after start datetime")
+    # Validate dates - for all-day events, allow same day (end at 23:59:59 is after start at 00:00:00)
+    # Also handle case where dates might be equal due to timezone parsing
+    if unavailability.is_all_day:
+        # For all-day events, just check that end date is >= start date
+        if unavailability.end_datetime.date() < unavailability.start_datetime.date():
+            raise HTTPException(status_code=400, detail="End date must be on or after start date")
+    else:
+        if unavailability.end_datetime <= unavailability.start_datetime:
+            raise HTTPException(status_code=400, detail="End datetime must be after start datetime")
     
     entry = EngineerUnavailability(
         engineer_id=target_engineer_id,
