@@ -179,8 +179,12 @@ async def apply_fees_to_booking(
     Apply fees to a booking based on product and change type assignments,
     as well as time-based conditions (weekends, bank holidays, out-of-hours).
     Supports per-hour fee calculation for time-based fees.
+    Uses the same matching logic as preview_applicable_fees for consistency.
     Returns list of BookingFee objects created.
     """
+    import logging
+    logger = logging.getLogger(__name__)
+    
     applied_fees = []
     
     # Get all active fees with their assignments
@@ -199,79 +203,130 @@ async def apply_fees_to_booking(
         holidays_result = await db.execute(select(BankHoliday))
         bank_holidays = [h.date.date() for h in holidays_result.scalars().all()]
     
+    # Get the change type and product for name matching
+    change_type_result = await db.execute(select(ChangeType).where(ChangeType.id == change_type_id))
+    change_type = change_type_result.scalar_one_or_none()
+    
+    product_result = await db.execute(select(Product).where(Product.id == product_id))
+    product = product_result.scalar_one_or_none()
+    
+    change_type_name = change_type.name.lower() if change_type else ""
+    product_name = product.name.lower() if product else ""
+    
+    logger.info(f"apply_fees_to_booking: booking_id={booking_id}, product={product_name}, change_type={change_type_name}")
+    
     for fee in fees:
-        should_apply = False
-        is_time_based_fee = False  # Track if this is a time-based fee (weekends, holidays, out-of-hours)
+        fee_type_lower = fee.fee_type.lower() if fee.fee_type else ""
+        fee_name_lower = fee.name.lower() if fee.name else ""
         
-        # Check if fee applies to this product
+        # Check if fee applies to this product/change type via assignments
         product_ids = [a.product_id for a in fee.product_assignments]
-        if product_id in product_ids:
-            should_apply = True
-        
-        # Check if fee applies to this change type
         change_type_ids = [a.change_type_id for a in fee.change_type_assignments]
-        if change_type_id in change_type_ids:
-            should_apply = True
         
-        # Check time-based conditions (only if scheduled_date is provided)
-        if scheduled_date:
-            # Check weekend condition
-            if fee.apply_on_weekends and scheduled_date.weekday() >= 5:  # Saturday=5, Sunday=6
-                should_apply = True
+        has_product_restriction = len(product_ids) > 0
+        has_change_type_restriction = len(change_type_ids) > 0
+        has_time_conditions = fee.apply_on_weekends or fee.apply_on_bank_holidays or fee.apply_outside_hours
+        
+        # Check if fee matches by assignment
+        product_matches = product_id in product_ids if has_product_restriction else False
+        change_type_matches = change_type_id in change_type_ids if has_change_type_restriction else False
+        
+        # Fallback name matching (same as preview_applicable_fees)
+        fee_type_matches_change = change_type_name and (
+            change_type_name in fee_type_lower or 
+            change_type_name in fee_name_lower or
+            fee_type_lower in change_type_name
+        )
+        
+        fee_type_matches_product = product_name and (
+            product_name in fee_type_lower or 
+            product_name in fee_name_lower
+        )
+        
+        # Determine if fee applies based on assignments OR name matching
+        if has_product_restriction and has_change_type_restriction:
+            base_applies = product_matches and change_type_matches
+        elif has_product_restriction:
+            base_applies = product_matches
+        elif has_change_type_restriction:
+            base_applies = change_type_matches
+        elif has_time_conditions:
+            base_applies = True
+        elif fee_type_matches_change or fee_type_matches_product:
+            base_applies = True
+        else:
+            base_applies = False
+        
+        if not base_applies:
+            continue
+        
+        # Skip Late Cancellation and Late Amendment fees (they're applied later)
+        if "cancellation" in fee_type_lower or "cancel" in fee_type_lower or \
+           "cancellation" in fee_name_lower or "cancel" in fee_name_lower:
+            continue
+        
+        if "amendment" in fee_type_lower or "amend" in fee_type_lower or \
+           "amendment" in fee_name_lower or "amend" in fee_name_lower:
+            continue
+        
+        # Check time-based conditions
+        is_time_based_fee = False
+        time_condition_met = False
+        
+        if has_time_conditions:
+            if fee.apply_on_weekends and scheduled_date and scheduled_date.weekday() >= 5:
+                time_condition_met = True
                 is_time_based_fee = True
             
-            # Check bank holiday condition
-            if fee.apply_on_bank_holidays and scheduled_date.date() in bank_holidays:
-                should_apply = True
+            if fee.apply_on_bank_holidays and scheduled_date and scheduled_date.date() in bank_holidays:
+                time_condition_met = True
                 is_time_based_fee = True
             
-            # Check out-of-hours condition
-            if fee.apply_outside_hours and is_outside_working_hours(
+            if fee.apply_outside_hours and scheduled_date and is_outside_working_hours(
                 scheduled_date, fee.outside_hours_start, fee.outside_hours_end
             ):
-                should_apply = True
+                time_condition_met = True
                 is_time_based_fee = True
+            
+            if not time_condition_met:
+                continue
         
-        if should_apply:
-            # Calculate the fee amount
-            fee_amount = fee.amount
-            
-            # If charge_per_hour is enabled, calculate based on duration
-            if getattr(fee, 'charge_per_hour', False) and fee.charge_per_hour:
-                if is_time_based_fee and scheduled_date:
-                    # For time-based fees, calculate how many hours qualify
-                    qualifying_hours = calculate_out_of_hours_duration(
-                        scheduled_date,
-                        duration_hours,
-                        fee.outside_hours_start,
-                        fee.outside_hours_end,
-                        bank_holidays,
-                        fee.apply_on_weekends,
-                        fee.apply_on_bank_holidays
-                    )
-                    fee_amount = fee.amount * qualifying_hours
-                else:
-                    # For product/change type fees, charge for full duration
-                    fee_amount = fee.amount * duration_hours
-            
-            # Only apply fee if amount is greater than 0
-            if fee_amount > 0:
-                # Determine status based on apply_mode
-                fee_status = BookingFeeStatus.APPROVED
-                if fee.apply_mode == FeeApplyMode.APPROVAL:
-                    fee_status = BookingFeeStatus.PENDING
-                
-                booking_fee = BookingFee(
-                    booking_id=booking_id,
-                    fee_id=fee.id,
-                    amount=fee_amount,
-                    status=fee_status
+        # Calculate the fee amount
+        fee_amount = fee.amount
+        
+        if getattr(fee, 'charge_per_hour', False) and fee.charge_per_hour:
+            if is_time_based_fee and scheduled_date:
+                qualifying_hours = calculate_out_of_hours_duration(
+                    scheduled_date,
+                    duration_hours,
+                    fee.outside_hours_start,
+                    fee.outside_hours_end,
+                    bank_holidays,
+                    fee.apply_on_weekends,
+                    fee.apply_on_bank_holidays
                 )
-                db.add(booking_fee)
-                applied_fees.append(booking_fee)
+                fee_amount = fee.amount * qualifying_hours
+            else:
+                fee_amount = fee.amount * duration_hours
+        
+        if fee_amount > 0:
+            fee_status = BookingFeeStatus.APPROVED
+            if fee.apply_mode == FeeApplyMode.APPROVAL:
+                fee_status = BookingFeeStatus.PENDING
+            
+            booking_fee = BookingFee(
+                booking_id=booking_id,
+                fee_id=fee.id,
+                amount=fee_amount,
+                status=fee_status
+            )
+            db.add(booking_fee)
+            applied_fees.append(booking_fee)
+            logger.info(f"Applied fee: {fee.name} (amount={fee_amount}, status={fee_status})")
     
     if applied_fees:
         await db.commit()
+        logger.info(f"Committed {len(applied_fees)} fees for booking {booking_id}")
     
     return applied_fees
 
