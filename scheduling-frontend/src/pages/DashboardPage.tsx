@@ -180,13 +180,13 @@ export default function DashboardPage() {
     }
   };
 
-    const upcomingBookings = filteredBookings.filter(
-      (b) => b.status !== 'cancelled' && new Date(b.scheduled_date) >= new Date()
-    );
+    const upcomingBookings = filteredBookings
+      .filter((b) => b.status !== 'cancelled' && new Date(b.scheduled_date) >= new Date())
+      .sort((a, b) => new Date(a.scheduled_date).getTime() - new Date(b.scheduled_date).getTime());
 
-    const pastBookings = filteredBookings.filter(
-      (b) => b.status === 'cancelled' || new Date(b.scheduled_date) < new Date()
-    );
+    const pastBookings = filteredBookings
+      .filter((b) => b.status === 'cancelled' || new Date(b.scheduled_date) < new Date())
+      .sort((a, b) => new Date(b.scheduled_date).getTime() - new Date(a.scheduled_date).getTime());
 
   return (
     <div className="min-h-screen bg-gray-50">
