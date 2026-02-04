@@ -2725,6 +2725,126 @@ async def get_fees_by_booking_report(
     return report_data
 
 
+@router.get("/reports/engineer-availability")
+async def get_engineer_availability_report(
+    start_date: str = None,
+    end_date: str = None,
+    engineer_id: int = None,
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get engineer availability report showing unavailability periods and booking load"""
+    await get_admin_user(authorization, db)
+    
+    from datetime import datetime, timedelta
+    
+    # Default date range: current month if not specified
+    if not start_date:
+        today = datetime.utcnow()
+        start_date = today.replace(day=1).strftime('%Y-%m-%d')
+    if not end_date:
+        today = datetime.utcnow()
+        next_month = today.replace(day=28) + timedelta(days=4)
+        end_date = (next_month - timedelta(days=next_month.day)).strftime('%Y-%m-%d')
+    
+    start_dt = datetime.fromisoformat(start_date)
+    end_dt = datetime.fromisoformat(end_date)
+    
+    # Get all engineers (or specific one)
+    eng_query = select(Engineer).options(selectinload(Engineer.user))
+    if engineer_id:
+        eng_query = eng_query.where(Engineer.id == engineer_id)
+    engineers_result = await db.execute(eng_query)
+    engineers = engineers_result.scalars().all()
+    
+    report = []
+    for eng in engineers:
+        # Get unavailability entries for this engineer in date range
+        unavail_query = select(EngineerUnavailability).options(
+            selectinload(EngineerUnavailability.created_by)
+        ).where(
+            EngineerUnavailability.engineer_id == eng.id,
+            EngineerUnavailability.start_datetime <= end_dt,
+            EngineerUnavailability.end_datetime >= start_dt
+        ).order_by(EngineerUnavailability.start_datetime)
+        
+        unavail_result = await db.execute(unavail_query)
+        unavailability_entries = unavail_result.scalars().all()
+        
+        # Get bookings for this engineer in date range
+        booking_query = select(Booking).where(
+            Booking.engineer_id == eng.id,
+            Booking.scheduled_date >= start_dt,
+            Booking.scheduled_date <= end_dt,
+            Booking.status.in_([BookingStatus.PENDING, BookingStatus.CONFIRMED, BookingStatus.COMPLETED])
+        )
+        booking_result = await db.execute(booking_query)
+        bookings = booking_result.scalars().all()
+        
+        # Calculate total unavailable hours
+        total_unavailable_hours = 0
+        unavailability_details = []
+        for entry in unavailability_entries:
+            if entry.is_all_day:
+                # Count days and multiply by working hours (assume 8 hours per day)
+                days = (entry.end_datetime.date() - entry.start_datetime.date()).days + 1
+                hours = days * 8
+            else:
+                hours = (entry.end_datetime - entry.start_datetime).total_seconds() / 3600
+            total_unavailable_hours += hours
+            
+            unavailability_details.append({
+                "id": entry.id,
+                "start_datetime": entry.start_datetime.isoformat(),
+                "end_datetime": entry.end_datetime.isoformat(),
+                "is_all_day": entry.is_all_day,
+                "reason": entry.reason,
+                "hours": round(hours, 2),
+                "created_by": entry.created_by.full_name if entry.created_by else None,
+                "created_at": entry.created_at.isoformat() if entry.created_at else None
+            })
+        
+        # Calculate booking hours
+        total_booking_hours = sum(float(b.duration_hours or 0) for b in bookings)
+        booking_count = len(bookings)
+        
+        # Calculate working days in range (excluding weekends)
+        working_days = 0
+        current = start_dt
+        while current <= end_dt:
+            if current.weekday() < 5:  # Monday to Friday
+                working_days += 1
+            current += timedelta(days=1)
+        
+        # Calculate total available hours (working days * 8 hours - unavailable hours)
+        total_working_hours = working_days * 8
+        available_hours = max(0, total_working_hours - total_unavailable_hours)
+        
+        # Calculate utilization percentage
+        utilization_pct = (total_booking_hours / available_hours * 100) if available_hours > 0 else 0
+        
+        report.append({
+            "engineer_id": eng.id,
+            "engineer_name": eng.user.full_name if eng.user else f"Engineer {eng.id}",
+            "calendar_email": eng.calendar_email,
+            "is_available": eng.is_available,
+            "working_hours_start": eng.working_hours_start,
+            "working_hours_end": eng.working_hours_end,
+            "date_range_start": start_date,
+            "date_range_end": end_date,
+            "working_days_in_range": working_days,
+            "total_working_hours": total_working_hours,
+            "total_unavailable_hours": round(total_unavailable_hours, 2),
+            "available_hours": round(available_hours, 2),
+            "total_booking_hours": round(total_booking_hours, 2),
+            "booking_count": booking_count,
+            "utilization_percentage": round(utilization_pct, 1),
+            "unavailability_entries": unavailability_details
+        })
+    
+    return report
+
+
 # ==================== Engineer Unavailability Management ====================
 
 @router.get("/engineers/{engineer_id}/unavailability")

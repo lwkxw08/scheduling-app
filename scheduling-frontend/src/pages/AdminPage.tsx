@@ -1185,14 +1185,18 @@ export default function AdminPage() {
                 if (reportStatusFilter && reportStatusFilter !== 'all') filters.status = reportStatusFilter;
                 data = await api.getFullDataExport(filters) as any[];
                 break;
-              case 'fees-by-booking':
-                if (reportProductFilter && reportProductFilter !== 'all') filters.product_id = parseInt(reportProductFilter);
-                if (reportStatusFilter && reportStatusFilter !== 'all') filters.status = reportStatusFilter;
-                data = await api.getFeesByBookingReport(filters) as any[];
-                break;
-            }
+                          case 'fees-by-booking':
+                            if (reportProductFilter && reportProductFilter !== 'all') filters.product_id = parseInt(reportProductFilter);
+                            if (reportStatusFilter && reportStatusFilter !== 'all') filters.status = reportStatusFilter;
+                            data = await api.getFeesByBookingReport(filters) as any[];
+                            break;
+                          case 'engineer-availability':
+                            if (reportEngineerFilter && reportEngineerFilter !== 'all') filters.engineer_id = parseInt(reportEngineerFilter);
+                            data = await api.getEngineerAvailabilityReport(filters) as any[];
+                            break;
+                        }
       
-            setReportData(data);
+                        setReportData(data);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -1406,13 +1410,68 @@ export default function AdminPage() {
                   'Total Waived Fees': b.total_waived_fees || 0,
                   'Legacy Expedite Fee': b.legacy_expedite_fee || 0,
                   'Legacy Cancellation Fee': b.legacy_cancellation_fee || 0,
-                });
-              }
-            });
-            break;
-        }
+                        });
+                      }
+                    });
+                    break;
+                  case 'engineer-availability':
+                    sheetName = 'Engineer Availability';
+                    exportData = [];
+                    reportData.forEach(e => {
+                      if (e.unavailability_entries && e.unavailability_entries.length > 0) {
+                        e.unavailability_entries.forEach((entry: any) => {
+                          exportData.push({
+                            'Engineer ID': e.engineer_id,
+                            'Engineer Name': e.engineer_name,
+                            'Calendar Email': e.calendar_email,
+                            'Is Available': e.is_available ? 'Yes' : 'No',
+                            'Working Hours': `${e.working_hours_start || '09:00'} - ${e.working_hours_end || '17:00'}`,
+                            'Date Range': `${e.date_range_start} to ${e.date_range_end}`,
+                            'Working Days in Range': e.working_days_in_range,
+                            'Total Working Hours': e.total_working_hours,
+                            'Total Unavailable Hours': e.total_unavailable_hours,
+                            'Available Hours': e.available_hours,
+                            'Total Booking Hours': e.total_booking_hours,
+                            'Booking Count': e.booking_count,
+                            'Utilization %': e.utilization_percentage,
+                            'Unavailability Start': entry.start_datetime,
+                            'Unavailability End': entry.end_datetime,
+                            'Is All Day': entry.is_all_day ? 'Yes' : 'No',
+                            'Unavailability Hours': entry.hours,
+                            'Reason': entry.reason || '',
+                            'Created By': entry.created_by || '',
+                            'Created At': entry.created_at || '',
+                          });
+                        });
+                      } else {
+                        exportData.push({
+                          'Engineer ID': e.engineer_id,
+                          'Engineer Name': e.engineer_name,
+                          'Calendar Email': e.calendar_email,
+                          'Is Available': e.is_available ? 'Yes' : 'No',
+                          'Working Hours': `${e.working_hours_start || '09:00'} - ${e.working_hours_end || '17:00'}`,
+                          'Date Range': `${e.date_range_start} to ${e.date_range_end}`,
+                          'Working Days in Range': e.working_days_in_range,
+                          'Total Working Hours': e.total_working_hours,
+                          'Total Unavailable Hours': e.total_unavailable_hours,
+                          'Available Hours': e.available_hours,
+                          'Total Booking Hours': e.total_booking_hours,
+                          'Booking Count': e.booking_count,
+                          'Utilization %': e.utilization_percentage,
+                          'Unavailability Start': '(No unavailability)',
+                          'Unavailability End': '',
+                          'Is All Day': '',
+                          'Unavailability Hours': 0,
+                          'Reason': '',
+                          'Created By': '',
+                          'Created At': '',
+                        });
+                      }
+                    });
+                    break;
+                }
     
-        const worksheet = XLSX.utils.json_to_sheet(exportData);
+                const worksheet = XLSX.utils.json_to_sheet(exportData);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
     
@@ -2656,8 +2715,9 @@ export default function AdminPage() {
                         <SelectItem value="revenue">Revenue Summary</SelectItem>
                                               <SelectItem value="user-activity">User Activity</SelectItem>
                                               <SelectItem value="full-data-export">Full Data Export</SelectItem>
-                                              <SelectItem value="fees-by-booking">Fees by Booking</SelectItem>
-                                            </SelectContent>
+                                                                                          <SelectItem value="fees-by-booking">Fees by Booking</SelectItem>
+                                                                                          <SelectItem value="engineer-availability">Engineer Availability</SelectItem>
+                                                                                        </SelectContent>
                     </Select>
                   </div>
                   <div className="space-y-2">
@@ -2676,8 +2736,8 @@ export default function AdminPage() {
                   </div>
                 </div>
 
-                                {(reportType === 'bookings' || reportType === 'full-data-export' || reportType === 'fees-by-booking') && (
-                                  <div className="grid grid-cols-3 gap-4 p-4 bg-gray-50 rounded-lg">
+                                                                {(reportType === 'bookings' || reportType === 'full-data-export' || reportType === 'fees-by-booking' || reportType === 'engineer-availability') && (
+                                                                  <div className="grid grid-cols-3 gap-4 p-4 bg-gray-50 rounded-lg">
                     <div className="space-y-2">
                       <Label>Product Filter</Label>
                       <Select value={reportProductFilter} onValueChange={setReportProductFilter}>
@@ -2850,23 +2910,38 @@ export default function AdminPage() {
                               <TableHead>Days Since Login</TableHead>
                             </>
                           )}
-                          {reportType === 'fees-by-booking' && (
-                            <>
-                              <TableHead>Booking ID</TableHead>
-                              <TableHead>Order Ref</TableHead>
-                              <TableHead>Product</TableHead>
-                              <TableHead>Change Type</TableHead>
-                              <TableHead>Booker</TableHead>
-                              <TableHead>Approved Fees</TableHead>
-                              <TableHead>Pending Fees</TableHead>
-                              <TableHead>Waived Fees</TableHead>
-                              <TableHead>Legacy Expedite</TableHead>
-                              <TableHead>Legacy Cancel</TableHead>
-                              <TableHead>Fee Count</TableHead>
-                            </>
-                          )}
-                        </TableRow>
-                      </TableHeader>
+                                                {reportType === 'fees-by-booking' && (
+                                                  <>
+                                                    <TableHead>Booking ID</TableHead>
+                                                    <TableHead>Order Ref</TableHead>
+                                                    <TableHead>Product</TableHead>
+                                                    <TableHead>Change Type</TableHead>
+                                                    <TableHead>Booker</TableHead>
+                                                    <TableHead>Approved Fees</TableHead>
+                                                    <TableHead>Pending Fees</TableHead>
+                                                    <TableHead>Waived Fees</TableHead>
+                                                    <TableHead>Legacy Expedite</TableHead>
+                                                    <TableHead>Legacy Cancel</TableHead>
+                                                    <TableHead>Fee Count</TableHead>
+                                                  </>
+                                                )}
+                                                {reportType === 'engineer-availability' && (
+                                                  <>
+                                                    <TableHead>Engineer</TableHead>
+                                                    <TableHead>Calendar Email</TableHead>
+                                                    <TableHead>Available</TableHead>
+                                                    <TableHead>Working Days</TableHead>
+                                                    <TableHead>Working Hours</TableHead>
+                                                    <TableHead>Unavailable Hours</TableHead>
+                                                    <TableHead>Available Hours</TableHead>
+                                                    <TableHead>Booking Hours</TableHead>
+                                                    <TableHead>Bookings</TableHead>
+                                                    <TableHead>Utilization</TableHead>
+                                                    <TableHead>Unavailability Entries</TableHead>
+                                                  </>
+                                                )}
+                                              </TableRow>
+                                            </TableHeader>
                       <TableBody>
                         {reportType === 'bookings' && reportData.map((b: any) => (
                           <TableRow key={b.id}>
@@ -2957,25 +3032,48 @@ export default function AdminPage() {
                             </TableCell>
                           </TableRow>
                         ))}
-                        {reportType === 'fees-by-booking' && reportData.map((b: any) => (
-                          <TableRow key={b.booking_id} className={!b.has_booking_fees ? 'bg-yellow-50' : ''}>
-                            <TableCell className="font-medium">{b.booking_id}</TableCell>
-                            <TableCell>{b.order_reference}</TableCell>
-                            <TableCell>{b.product_name}</TableCell>
-                            <TableCell>{b.change_type_name}</TableCell>
-                            <TableCell>{b.booker_name}</TableCell>
-                            <TableCell className="text-green-600 font-medium">£{b.total_approved_fees?.toFixed(2) || '0.00'}</TableCell>
-                            <TableCell className="text-yellow-600 font-medium">£{b.total_pending_fees?.toFixed(2) || '0.00'}</TableCell>
-                            <TableCell className="text-gray-500">£{b.total_waived_fees?.toFixed(2) || '0.00'}</TableCell>
-                            <TableCell className="text-blue-600">£{b.legacy_expedite_fee?.toFixed(2) || '0.00'}</TableCell>
-                            <TableCell className="text-red-600">£{b.legacy_cancellation_fee?.toFixed(2) || '0.00'}</TableCell>
-                            <TableCell>{b.fee_breakdown?.length || 0}</TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                )}
+                                        {reportType === 'fees-by-booking' && reportData.map((b: any) => (
+                                          <TableRow key={b.booking_id} className={!b.has_booking_fees ? 'bg-yellow-50' : ''}>
+                                            <TableCell className="font-medium">{b.booking_id}</TableCell>
+                                            <TableCell>{b.order_reference}</TableCell>
+                                            <TableCell>{b.product_name}</TableCell>
+                                            <TableCell>{b.change_type_name}</TableCell>
+                                            <TableCell>{b.booker_name}</TableCell>
+                                            <TableCell className="text-green-600 font-medium">£{b.total_approved_fees?.toFixed(2) || '0.00'}</TableCell>
+                                            <TableCell className="text-yellow-600 font-medium">£{b.total_pending_fees?.toFixed(2) || '0.00'}</TableCell>
+                                            <TableCell className="text-gray-500">£{b.total_waived_fees?.toFixed(2) || '0.00'}</TableCell>
+                                            <TableCell className="text-blue-600">£{b.legacy_expedite_fee?.toFixed(2) || '0.00'}</TableCell>
+                                            <TableCell className="text-red-600">£{b.legacy_cancellation_fee?.toFixed(2) || '0.00'}</TableCell>
+                                            <TableCell>{b.fee_breakdown?.length || 0}</TableCell>
+                                          </TableRow>
+                                        ))}
+                                        {reportType === 'engineer-availability' && reportData.map((e: any) => (
+                                          <TableRow key={e.engineer_id}>
+                                            <TableCell className="font-medium">{e.engineer_name}</TableCell>
+                                            <TableCell>{e.calendar_email}</TableCell>
+                                            <TableCell>
+                                              <Badge className={e.is_available ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}>
+                                                {e.is_available ? 'Yes' : 'No'}
+                                              </Badge>
+                                            </TableCell>
+                                            <TableCell>{e.working_days_in_range}</TableCell>
+                                            <TableCell>{e.total_working_hours}h</TableCell>
+                                            <TableCell className="text-red-600">{e.total_unavailable_hours}h</TableCell>
+                                            <TableCell className="text-green-600">{e.available_hours}h</TableCell>
+                                            <TableCell className="text-blue-600">{e.total_booking_hours}h</TableCell>
+                                            <TableCell>{e.booking_count}</TableCell>
+                                            <TableCell>
+                                              <Badge className={e.utilization_percentage > 80 ? 'bg-red-100 text-red-800' : e.utilization_percentage > 50 ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800'}>
+                                                {e.utilization_percentage}%
+                                              </Badge>
+                                            </TableCell>
+                                            <TableCell>{e.unavailability_entries?.length || 0}</TableCell>
+                                          </TableRow>
+                                        ))}
+                                      </TableBody>
+                                    </Table>
+                                  </div>
+                                )}
 
                 {reportType !== 'revenue' && reportData.length === 0 && !isLoadingReport && (
                   <div className="text-center py-12 text-gray-500">

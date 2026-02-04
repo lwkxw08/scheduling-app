@@ -706,21 +706,33 @@ class ApiService {
     return this.request(`/admin/reports/revenue-summary?${params.toString()}`);
   }
 
-  async getFeesByBookingReport(filters: {
-    start_date?: string;
-    end_date?: string;
-    status?: string;
-    product_id?: number;
-  } = {}) {
-    const params = new URLSearchParams();
-    if (filters.start_date) params.append('start_date', filters.start_date);
-    if (filters.end_date) params.append('end_date', filters.end_date);
-    if (filters.status) params.append('status', filters.status);
-    if (filters.product_id) params.append('product_id', filters.product_id.toString());
-    return this.request(`/admin/reports/fees-by-booking?${params.toString()}`);
-  }
+    async getFeesByBookingReport(filters: {
+      start_date?: string;
+      end_date?: string;
+      status?: string;
+      product_id?: number;
+    } = {}) {
+      const params = new URLSearchParams();
+      if (filters.start_date) params.append('start_date', filters.start_date);
+      if (filters.end_date) params.append('end_date', filters.end_date);
+      if (filters.status) params.append('status', filters.status);
+      if (filters.product_id) params.append('product_id', filters.product_id.toString());
+      return this.request(`/admin/reports/fees-by-booking?${params.toString()}`);
+    }
 
-  // Engineer Dashboard Methods
+    async getEngineerAvailabilityReport(filters: {
+      start_date?: string;
+      end_date?: string;
+      engineer_id?: number;
+    } = {}) {
+      const params = new URLSearchParams();
+      if (filters.start_date) params.append('start_date', filters.start_date);
+      if (filters.end_date) params.append('end_date', filters.end_date);
+      if (filters.engineer_id) params.append('engineer_id', filters.engineer_id.toString());
+      return this.request(`/admin/reports/engineer-availability?${params.toString()}`);
+    }
+
+    // Engineer Dashboard Methods
   async getEngineerProfile() {
     return this.request('/engineer/profile');
   }
