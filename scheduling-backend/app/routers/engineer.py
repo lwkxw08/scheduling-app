@@ -299,6 +299,15 @@ async def update_booking_status(
     booking.status = status_update.new_status
     booking.updated_at = datetime.utcnow()
     
+    # If notes are provided, add them to engineer_notes with timestamp and user attribution
+    if status_update.notes:
+        timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M")
+        new_note = f"[{timestamp}] Note by {user.full_name}:\n{status_update.notes}"
+        if booking.engineer_notes:
+            booking.engineer_notes = f"{booking.engineer_notes}\n\n{new_note}"
+        else:
+            booking.engineer_notes = new_note
+    
     # If an issue is being reported, update the booking's issue fields
     if status_update.issue_reported and status_update.issue_description:
         booking.issue_description = status_update.issue_description
@@ -381,11 +390,16 @@ async def create_engineer_unavailability(
     
     # Validate dates - for all-day events, allow same day (end at 23:59:59 is after start at 00:00:00)
     # Also handle case where dates might be equal due to timezone parsing
+    start_date = unavailability.start_datetime.date()
+    end_date = unavailability.end_datetime.date()
+    
     if unavailability.is_all_day:
         # For all-day events, just check that end date is >= start date
-        if unavailability.end_datetime.date() < unavailability.start_datetime.date():
+        # Use date comparison to avoid any timezone issues
+        if end_date < start_date:
             raise HTTPException(status_code=400, detail="End date must be on or after start date")
     else:
+        # For non-all-day events, end must be strictly after start
         if unavailability.end_datetime <= unavailability.start_datetime:
             raise HTTPException(status_code=400, detail="End datetime must be after start datetime")
     
