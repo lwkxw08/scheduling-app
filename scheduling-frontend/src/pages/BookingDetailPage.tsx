@@ -523,12 +523,6 @@ export default function BookingDetailPage() {
                   </div>
                 </div>
               </div>
-              {booking.notes && (
-                <div>
-                  <Label className="text-gray-500">Notes</Label>
-                  <p className="mt-1">{booking.notes}</p>
-                </div>
-              )}
               {booking.additional_emails && booking.additional_emails.length > 0 && (
                 <div>
                   <Label className="text-gray-500">Additional Email Recipients</Label>
