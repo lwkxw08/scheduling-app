@@ -207,7 +207,7 @@ export default function AdminPage() {
     // Issues Reported state
     const [openIssues, setOpenIssues] = useState<any[]>([]);
     const [openIssuesCount, setOpenIssuesCount] = useState(0);
-    const [showResolvedIssues, setShowResolvedIssues] = useState(false);
+    const [showOpenIssuesOnly, setShowOpenIssuesOnly] = useState(true);
     const [isLoadingIssues, setIsLoadingIssues] = useState(false);
     const [selectedIssue, setSelectedIssue] = useState<any | null>(null);
     const [showIssueDetailDialog, setShowIssueDetailDialog] = useState(false);
@@ -235,7 +235,7 @@ export default function AdminPage() {
   const loadOpenIssues = async () => {
     setIsLoadingIssues(true);
     try {
-      const data = await api.getOpenIssues(showResolvedIssues);
+      const data = await api.getOpenIssues(!showOpenIssuesOnly);
       setOpenIssues(data);
     } catch (err) {
       console.error('Failed to load open issues:', err);
@@ -2497,15 +2497,15 @@ export default function AdminPage() {
                 </div>
                 <div className="flex items-center gap-4">
                   <div className="flex items-center gap-2">
-                    <Checkbox 
-                      id="showResolved" 
-                      checked={showResolvedIssues} 
-                      onCheckedChange={(checked) => {
-                        setShowResolvedIssues(checked as boolean);
-                        setTimeout(() => loadOpenIssues(), 100);
-                      }}
-                    />
-                    <Label htmlFor="showResolved" className="text-sm">Show resolved issues</Label>
+                                        <Checkbox 
+                                          id="showOpenOnly" 
+                                          checked={showOpenIssuesOnly} 
+                                          onCheckedChange={(checked) => {
+                                            setShowOpenIssuesOnly(checked as boolean);
+                                            setTimeout(() => loadOpenIssues(), 100);
+                                          }}
+                                        />
+                                        <Label htmlFor="showOpenOnly" className="text-sm">Show open issues only</Label>
                   </div>
                   <Button variant="outline" onClick={loadOpenIssues} disabled={isLoadingIssues}>
                     {isLoadingIssues ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Refresh'}
