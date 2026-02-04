@@ -232,10 +232,11 @@ export default function AdminPage() {
     }
   };
 
-  const loadOpenIssues = async () => {
+  const loadOpenIssues = async (openOnly?: boolean) => {
     setIsLoadingIssues(true);
     try {
-      const data = await api.getOpenIssues(!showOpenIssuesOnly);
+      const filterOpenOnly = openOnly !== undefined ? openOnly : showOpenIssuesOnly;
+      const data = await api.getOpenIssues(!filterOpenOnly);
       setOpenIssues(data);
     } catch (err) {
       console.error('Failed to load open issues:', err);
@@ -2502,12 +2503,12 @@ export default function AdminPage() {
                                           checked={showOpenIssuesOnly} 
                                           onCheckedChange={(checked) => {
                                             setShowOpenIssuesOnly(checked as boolean);
-                                            setTimeout(() => loadOpenIssues(), 100);
+                                            loadOpenIssues(checked as boolean);
                                           }}
                                         />
                                         <Label htmlFor="showOpenOnly" className="text-sm">Show open issues only</Label>
                   </div>
-                  <Button variant="outline" onClick={loadOpenIssues} disabled={isLoadingIssues}>
+                  <Button variant="outline" onClick={() => loadOpenIssues()} disabled={isLoadingIssues}>
                     {isLoadingIssues ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Refresh'}
                   </Button>
                 </div>
