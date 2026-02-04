@@ -832,7 +832,19 @@ async def update_booking(
     if update_data.duration_hours:
         booking.duration_hours = update_data.duration_hours
     if update_data.notes is not None:
-        booking.notes = update_data.notes
+        # Add timestamp and user tracking to notes
+        if update_data.notes and update_data.notes != booking.notes:
+            timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M")
+            new_note_content = update_data.notes
+            # Check if this is a new note being added (not just editing existing)
+            if booking.notes and not update_data.notes.startswith(booking.notes):
+                # User is adding new content
+                booking.notes = f"{booking.notes}\n\n[{timestamp}] Note by {user.full_name}:\n{new_note_content}"
+            elif not booking.notes:
+                # First note
+                booking.notes = f"[{timestamp}] Note by {user.full_name}:\n{new_note_content}"
+            else:
+                booking.notes = update_data.notes
     if update_data.custom_fields_data is not None:
         booking.custom_fields_data = update_data.custom_fields_data
     if update_data.additional_emails is not None:
@@ -847,9 +859,17 @@ async def update_booking(
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Engineer not found")
         booking.engineer_id = update_data.engineer_id
     
-    # Handle engineer notes
+    # Handle engineer notes with timestamp tracking
     if update_data.engineer_notes is not None:
-        booking.engineer_notes = update_data.engineer_notes
+        if update_data.engineer_notes and update_data.engineer_notes != booking.engineer_notes:
+            timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M")
+            new_note_content = update_data.engineer_notes
+            if booking.engineer_notes and not update_data.engineer_notes.startswith(booking.engineer_notes):
+                booking.engineer_notes = f"{booking.engineer_notes}\n\n[{timestamp}] Note by {user.full_name}:\n{new_note_content}"
+            elif not booking.engineer_notes:
+                booking.engineer_notes = f"[{timestamp}] Note by {user.full_name}:\n{new_note_content}"
+            else:
+                booking.engineer_notes = update_data.engineer_notes
     
     # Handle issue description - set issue_reported_at when first reported
     if update_data.issue_description is not None:
@@ -1387,4 +1407,75 @@ async def preview_applicable_fees(
         "is_expedite_booking": is_expedite_booking,
         "hours_until_booking": hours_until_booking,
         "minimum_notice_hours": minimum_notice_hours
+    }
+
+
+@router.patch("/{booking_id}/status")
+async def update_booking_status(
+    booking_id: int,
+    new_status: str,
+    notes: str = None,
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Update booking status. Admin can set any status, engineers can only set delayed status.
+    """
+    user = await get_current_user(authorization, db)
+    
+    result = await db.execute(
+        select(Booking)
+        .where(Booking.id == booking_id)
+        .options(
+            selectinload(Booking.engineer).selectinload(Engineer.user),
+            selectinload(Booking.product),
+            selectinload(Booking.change_type)
+        )
+    )
+    booking = result.scalar_one_or_none()
+    
+    if not booking:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
+    
+    # Check permissions
+    is_admin = user.role.value == "admin"
+    is_assigned_engineer = booking.engineer and booking.engineer.user_id == user.id
+    
+    if not is_admin and not is_assigned_engineer:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    
+    # Engineers can only set delayed status
+    if not is_admin and new_status != "delayed":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, 
+            detail="Engineers can only set bookings to delayed status"
+        )
+    
+    # Validate the new status
+    valid_statuses = ["pending", "confirmed", "completed", "delayed", "cancelled"]
+    if new_status not in valid_statuses:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, 
+            detail=f"Invalid status. Must be one of: {', '.join(valid_statuses)}"
+        )
+    
+    previous_status = booking.status.value
+    booking.status = BookingStatus(new_status)
+    
+    # Update notes if provided
+    if notes:
+        existing_notes = booking.notes or ""
+        timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M")
+        status_note = f"\n\n[{timestamp}] Status changed to {new_status} by {user.full_name}"
+        if notes.strip():
+            status_note += f": {notes}"
+        booking.notes = existing_notes + status_note
+    
+    await db.commit()
+    
+    return {
+        "message": f"Booking status updated to {new_status}",
+        "previous_status": previous_status,
+        "new_status": new_status,
+        "booking_id": booking_id
     }

@@ -950,6 +950,13 @@ class ApiService {
   async reopenIssue(bookingId: number) {
     return this.request<any>(`/admin/issues/${bookingId}/reopen`, { method: 'PATCH' });
   }
+
+  async adminUpdateBookingStatus(bookingId: number, newStatus: string, notes?: string) {
+    const params = new URLSearchParams();
+    params.append('new_status', newStatus);
+    if (notes) params.append('notes', notes);
+    return this.request<any>(`/bookings/${bookingId}/status?${params.toString()}`, { method: 'PATCH' });
+  }
 }
 
 export const api = new ApiService();

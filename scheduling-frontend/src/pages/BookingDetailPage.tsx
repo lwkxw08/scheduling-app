@@ -14,6 +14,104 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Calendar, ArrowLeft, Clock, User, AlertTriangle, Edit, Trash2, XCircle, Loader2, AlertCircle, UserCog } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 
+// Status Change Section Component
+function StatusChangeSection({ booking, isAdmin, onStatusChanged }: {
+  booking: Booking; 
+  isAdmin: boolean; 
+  onStatusChanged: () => void;
+}) {
+  const [selectedStatus, setSelectedStatus] = useState<string>(booking.status);
+  const [statusNotes, setStatusNotes] = useState('');
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [error, setError] = useState('');
+
+  const statusOptions: string[] = isAdmin 
+    ? ['pending', 'confirmed', 'completed', 'delayed']
+    : ['delayed'];
+
+  const handleStatusChange = async () => {
+    if (selectedStatus === booking.status && !statusNotes) return;
+    
+    setIsUpdating(true);
+    setError('');
+    
+    try {
+      await api.adminUpdateBookingStatus(booking.id, selectedStatus, statusNotes || undefined);
+      setStatusNotes('');
+      onStatusChanged();
+    } catch (err: any) {
+      setError(err.message || 'Failed to update status');
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      {error && (
+        <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">
+          {error}
+        </div>
+      )}
+      
+      <div className="space-y-2">
+        <Label>Current Status</Label>
+        <Badge className={
+          booking.status === 'confirmed' ? 'bg-green-100 text-green-800' :
+          booking.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+          booking.status === 'completed' ? 'bg-blue-100 text-blue-800' :
+          booking.status === 'delayed' ? 'bg-orange-100 text-orange-800' :
+          'bg-gray-100 text-gray-800'
+        }>
+          {booking.status}
+        </Badge>
+      </div>
+
+      <div className="space-y-2">
+        <Label>Change Status To</Label>
+        <Select value={selectedStatus} onValueChange={setSelectedStatus}>
+          <SelectTrigger>
+            <SelectValue placeholder="Select status" />
+          </SelectTrigger>
+          <SelectContent>
+            {statusOptions.map((status) => (
+              <SelectItem key={status} value={status}>
+                {status.charAt(0).toUpperCase() + status.slice(1)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="space-y-2">
+        <Label>Notes (optional)</Label>
+        <Textarea
+          placeholder={selectedStatus === 'delayed' ? 'Describe the issue or reason for delay...' : 'Add any notes about this status change...'}
+          value={statusNotes}
+          onChange={(e) => setStatusNotes(e.target.value)}
+          rows={3}
+        />
+        <p className="text-xs text-gray-500">Notes will be timestamped and attributed to you</p>
+      </div>
+
+      <Button 
+        onClick={handleStatusChange} 
+        disabled={isUpdating || (selectedStatus === booking.status && !statusNotes)}
+        className={selectedStatus === 'delayed' ? 'bg-orange-600 hover:bg-orange-700' : ''}
+      >
+        {isUpdating ? (
+          <>
+            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            Updating...
+          </>
+        ) : (
+          `Update Status${selectedStatus !== booking.status ? ` to ${selectedStatus.charAt(0).toUpperCase() + selectedStatus.slice(1)}` : ''}`
+        )}
+      </Button>
+    </div>
+  );
+}
+
 export default function BookingDetailPage() {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
@@ -154,6 +252,8 @@ export default function BookingDetailPage() {
         return 'bg-red-100 text-red-800';
       case 'completed':
         return 'bg-blue-100 text-blue-800';
+      case 'delayed':
+        return 'bg-orange-100 text-orange-800';
       default:
         return 'bg-gray-100 text-gray-800';
     }
@@ -520,6 +620,25 @@ export default function BookingDetailPage() {
                         )}
                       </CardContent>
                     </Card>
+
+          {/* Status Management Section - Admin/Engineer */}
+          {(isAdmin || (user?.role === 'engineer' && booking.engineer?.user_id === user?.id)) && booking.status !== 'cancelled' && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Status Management</CardTitle>
+                <CardDescription>
+                  {isAdmin ? 'Update the booking status' : 'Mark this booking as delayed if there are issues'}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <StatusChangeSection 
+                  booking={booking} 
+                  isAdmin={isAdmin} 
+                  onStatusChanged={loadBooking}
+                />
+              </CardContent>
+            </Card>
+          )}
 
           {/* Additional Information Section */}
           <Card>
