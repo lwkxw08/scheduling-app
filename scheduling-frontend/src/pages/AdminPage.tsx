@@ -1990,12 +1990,12 @@ export default function AdminPage() {
                   </div>
                   <div className="space-y-2">
                     <Label>Filter by Engineer</Label>
-                    <Select value={availabilityViewEngineerFilter} onValueChange={setAvailabilityViewEngineerFilter}>
+                    <Select value={availabilityViewEngineerFilter || 'all'} onValueChange={(v) => setAvailabilityViewEngineerFilter(v === 'all' ? '' : v)}>
                       <SelectTrigger className="w-48">
                         <SelectValue placeholder="All Engineers" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">All Engineers</SelectItem>
+                        <SelectItem value="all">All Engineers</SelectItem>
                         {engineers.map((e) => (
                           <SelectItem key={e.id} value={e.id.toString()}>
                             {e.user?.full_name || 'Unknown'}
