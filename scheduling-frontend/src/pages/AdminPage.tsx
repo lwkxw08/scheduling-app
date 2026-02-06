@@ -2038,11 +2038,11 @@ export default function AdminPage() {
                     </div>
 
                     <div className="overflow-x-auto">
-                      <div className="min-w-[1200px]">
+                      <div className="min-w-[1800px]">
                         <div className="flex border-b border-gray-200 pb-2 mb-2">
                           <div className="w-40 flex-shrink-0 font-medium text-sm">Engineer</div>
                           <div className="flex-1 flex">
-                            {Array.from({ length: 14 }, (_, i) => i + 6).map((hour) => (
+                            {Array.from({ length: 24 }, (_, i) => i).map((hour) => (
                               <div key={hour} className="flex-1 text-center text-xs text-gray-500 border-l border-gray-100">
                                 {hour.toString().padStart(2, '0')}:00
                               </div>
@@ -2053,6 +2053,7 @@ export default function AdminPage() {
                         {availabilityViewData.engineers?.map((eng: any) => {
                           const workingStartHour = eng.working_start ? parseInt(eng.working_start.split(':')[0]) : 9;
                           const workingEndHour = eng.working_end ? parseInt(eng.working_end.split(':')[0]) : 17;
+                          const isOvernightShift = workingEndHour < workingStartHour;
                           
                           return (
                             <div key={eng.engineer_id} className="flex items-center py-2 border-b border-gray-100">
@@ -2063,8 +2064,10 @@ export default function AdminPage() {
                                 </div>
                               </div>
                               <div className="flex-1 flex h-10 relative">
-                                {Array.from({ length: 14 }, (_, i) => i + 6).map((hour) => {
-                                  const isWorkingHour = eng.is_working && hour >= workingStartHour && hour < workingEndHour;
+                                {Array.from({ length: 24 }, (_, i) => i).map((hour) => {
+                                  const isWorkingHour = eng.is_working && (isOvernightShift 
+                                    ? (hour >= workingStartHour || hour < workingEndHour)
+                                    : (hour >= workingStartHour && hour < workingEndHour));
                                   
                                   const bookedSlot = eng.booked_slots?.find((slot: any) => {
                                     const slotStartHour = parseInt(slot.start_time.split(':')[0]);
