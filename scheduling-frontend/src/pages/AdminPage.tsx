@@ -212,6 +212,12 @@ export default function AdminPage() {
     const [selectedIssue, setSelectedIssue] = useState<any | null>(null);
     const [showIssueDetailDialog, setShowIssueDetailDialog] = useState(false);
 
+    // Engineer Availability View state
+    const [availabilityViewDate, setAvailabilityViewDate] = useState(new Date().toISOString().split('T')[0]);
+    const [availabilityViewData, setAvailabilityViewData] = useState<any>(null);
+    const [availabilityViewEngineerFilter, setAvailabilityViewEngineerFilter] = useState<string>('');
+    const [isLoadingAvailabilityView, setIsLoadingAvailabilityView] = useState(false);
+
   useEffect(() => {
     if (user?.role !== 'admin') {
       navigate('/dashboard');
@@ -262,6 +268,19 @@ export default function AdminPage() {
       loadOpenIssuesCount();
     } catch (err) {
       console.error('Failed to reopen issue:', err);
+    }
+  };
+
+  const loadEngineerAvailabilityView = async () => {
+    setIsLoadingAvailabilityView(true);
+    try {
+      const engineerId = availabilityViewEngineerFilter ? parseInt(availabilityViewEngineerFilter) : undefined;
+      const data = await api.getEngineerAvailabilityView(availabilityViewDate, engineerId);
+      setAvailabilityViewData(data);
+    } catch (err) {
+      console.error('Failed to load engineer availability view:', err);
+    } finally {
+      setIsLoadingAvailabilityView(false);
     }
   };
 
@@ -1950,6 +1969,169 @@ export default function AdminPage() {
                     ))}
                   </TableBody>
                 </Table>
+              </CardContent>
+            </Card>
+
+            <Card className="mt-6">
+              <CardHeader>
+                <CardTitle>Engineer Availability View</CardTitle>
+                <CardDescription>View engineer availability for a specific day with a timeline view</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="flex flex-wrap gap-4 mb-6">
+                  <div className="space-y-2">
+                    <Label>Date</Label>
+                    <Input
+                      type="date"
+                      value={availabilityViewDate}
+                      onChange={(e) => setAvailabilityViewDate(e.target.value)}
+                      className="w-48"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Filter by Engineer</Label>
+                    <Select value={availabilityViewEngineerFilter} onValueChange={setAvailabilityViewEngineerFilter}>
+                      <SelectTrigger className="w-48">
+                        <SelectValue placeholder="All Engineers" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="">All Engineers</SelectItem>
+                        {engineers.map((e) => (
+                          <SelectItem key={e.id} value={e.id.toString()}>
+                            {e.user?.full_name || 'Unknown'}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex items-end">
+                    <Button onClick={loadEngineerAvailabilityView} disabled={isLoadingAvailabilityView}>
+                      {isLoadingAvailabilityView ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Calendar className="w-4 h-4 mr-2" />}
+                      Load Availability
+                    </Button>
+                  </div>
+                </div>
+
+                {availabilityViewData && (
+                  <div className="space-y-4">
+                    <div className="text-sm text-gray-600 mb-4">
+                      Showing availability for {availabilityViewData.day_name}, {availabilityViewDate}
+                    </div>
+                    
+                    <div className="flex gap-4 text-xs mb-4">
+                      <div className="flex items-center gap-1">
+                        <div className="w-4 h-4 bg-green-200 border border-green-400 rounded"></div>
+                        <span>Available</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <div className="w-4 h-4 bg-blue-400 border border-blue-600 rounded"></div>
+                        <span>Booked</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <div className="w-4 h-4 bg-yellow-300 border border-yellow-500 rounded"></div>
+                        <span>Unavailable</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <div className="w-4 h-4 bg-gray-300 border border-gray-400 rounded"></div>
+                        <span>Not Working</span>
+                      </div>
+                    </div>
+
+                    <div className="overflow-x-auto">
+                      <div className="min-w-[1200px]">
+                        <div className="flex border-b border-gray-200 pb-2 mb-2">
+                          <div className="w-40 flex-shrink-0 font-medium text-sm">Engineer</div>
+                          <div className="flex-1 flex">
+                            {Array.from({ length: 14 }, (_, i) => i + 6).map((hour) => (
+                              <div key={hour} className="flex-1 text-center text-xs text-gray-500 border-l border-gray-100">
+                                {hour.toString().padStart(2, '0')}:00
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {availabilityViewData.engineers?.map((eng: any) => {
+                          const workingStartHour = eng.working_start ? parseInt(eng.working_start.split(':')[0]) : 9;
+                          const workingEndHour = eng.working_end ? parseInt(eng.working_end.split(':')[0]) : 17;
+                          
+                          return (
+                            <div key={eng.engineer_id} className="flex items-center py-2 border-b border-gray-100">
+                              <div className="w-40 flex-shrink-0">
+                                <div className="font-medium text-sm">{eng.engineer_name}</div>
+                                <div className="text-xs text-gray-500">
+                                  {eng.is_working ? `${eng.working_start} - ${eng.working_end}` : 'Not working'}
+                                </div>
+                              </div>
+                              <div className="flex-1 flex h-10 relative">
+                                {Array.from({ length: 14 }, (_, i) => i + 6).map((hour) => {
+                                  const isWorkingHour = eng.is_working && hour >= workingStartHour && hour < workingEndHour;
+                                  
+                                  const bookedSlot = eng.booked_slots?.find((slot: any) => {
+                                    const slotStartHour = parseInt(slot.start_time.split(':')[0]);
+                                    const slotEndHour = parseInt(slot.end_time.split(':')[0]);
+                                    return hour >= slotStartHour && hour < slotEndHour;
+                                  });
+                                  
+                                  const unavailableSlot = eng.unavailable_slots?.find((slot: any) => {
+                                    const slotStartHour = parseInt(slot.start_time.split(':')[0]);
+                                    const slotEndHour = parseInt(slot.end_time.split(':')[0]);
+                                    return hour >= slotStartHour && hour < slotEndHour;
+                                  });
+                                  
+                                  let bgColor = 'bg-gray-200';
+                                  let borderColor = 'border-gray-300';
+                                  let title = 'Not working';
+                                  
+                                  if (isWorkingHour) {
+                                    bgColor = 'bg-green-200';
+                                    borderColor = 'border-green-300';
+                                    title = 'Available';
+                                    
+                                    if (bookedSlot) {
+                                      bgColor = 'bg-blue-400';
+                                      borderColor = 'border-blue-500';
+                                      title = `Booked: ${bookedSlot.order_reference} - ${bookedSlot.customer_name}`;
+                                    } else if (unavailableSlot) {
+                                      bgColor = 'bg-yellow-300';
+                                      borderColor = 'border-yellow-400';
+                                      title = `Unavailable: ${unavailableSlot.reason || 'No reason'}`;
+                                    }
+                                  }
+                                  
+                                  return (
+                                    <div
+                                      key={hour}
+                                      className={`flex-1 ${bgColor} border-l ${borderColor} cursor-pointer hover:opacity-80 transition-opacity`}
+                                      title={title}
+                                    >
+                                      {bookedSlot && hour === parseInt(bookedSlot.start_time.split(':')[0]) && (
+                                        <div className="text-[10px] text-white truncate px-1 leading-tight mt-1">
+                                          {bookedSlot.order_reference}
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })}
+
+                        {(!availabilityViewData.engineers || availabilityViewData.engineers.length === 0) && (
+                          <div className="text-center py-8 text-gray-500">
+                            No engineers found for the selected criteria
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {!availabilityViewData && (
+                  <div className="text-center py-8 text-gray-500">
+                    Select a date and click "Load Availability" to view engineer schedules
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>

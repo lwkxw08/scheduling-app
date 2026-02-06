@@ -5,7 +5,7 @@ from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 from sqlalchemy.exc import IntegrityError
 from typing import List
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 import uuid
 import aiofiles
@@ -4031,4 +4031,136 @@ async def import_all_data(
             "change_types": change_type_mapping,
             "engineers": engineer_mapping
         }
+    }
+
+
+@router.get("/engineer-availability")
+async def get_engineer_availability_view(
+    date: str,
+    engineer_id: int = None,
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get all engineers' availability for a given date for the Gantt-style view."""
+    await get_admin_user(authorization, db)
+    
+    try:
+        target_date = datetime.strptime(date, "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid date format. Use YYYY-MM-DD"
+        )
+    
+    day_of_week = target_date.weekday()
+    day_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    
+    query = select(Engineer).options(
+        selectinload(Engineer.user),
+        selectinload(Engineer.schedules)
+    )
+    if engineer_id:
+        query = query.where(Engineer.id == engineer_id)
+    
+    result = await db.execute(query)
+    engineers = result.scalars().all()
+    
+    start_of_day = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
+    end_of_day = target_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+    
+    engineer_data = []
+    
+    for engineer in engineers:
+        schedule = None
+        for s in engineer.schedules:
+            if s.day_of_week == day_of_week:
+                schedule = s
+                break
+        
+        if schedule:
+            if not schedule.is_working:
+                working_start = None
+                working_end = None
+                is_working = False
+            else:
+                working_start = schedule.start_time
+                working_end = schedule.end_time
+                is_working = True
+        else:
+            if day_of_week >= 5:
+                working_start = None
+                working_end = None
+                is_working = False
+            else:
+                working_start = engineer.working_hours_start
+                working_end = engineer.working_hours_end
+                is_working = True
+        
+        bookings_result = await db.execute(
+            select(Booking).where(
+                Booking.engineer_id == engineer.id,
+                Booking.scheduled_date >= start_of_day,
+                Booking.scheduled_date <= end_of_day,
+                Booking.status.in_([BookingStatus.PENDING, BookingStatus.CONFIRMED, BookingStatus.DELAYED])
+            ).options(
+                selectinload(Booking.product),
+                selectinload(Booking.change_type)
+            )
+        )
+        bookings = bookings_result.scalars().all()
+        
+        booked_slots = []
+        for booking in bookings:
+            booking_start = booking.scheduled_date
+            booking_end = booking.scheduled_date + timedelta(hours=booking.duration_hours)
+            booked_slots.append({
+                "booking_id": booking.id,
+                "order_reference": booking.order_reference,
+                "customer_name": booking.customer_name,
+                "start_time": booking_start.strftime("%H:%M"),
+                "end_time": booking_end.strftime("%H:%M"),
+                "duration_hours": booking.duration_hours,
+                "status": booking.status.value,
+                "product_name": booking.product.name if booking.product else None,
+                "change_type_name": booking.change_type.name if booking.change_type else None
+            })
+        
+        unavailability_result = await db.execute(
+            select(EngineerUnavailability).where(
+                EngineerUnavailability.engineer_id == engineer.id,
+                EngineerUnavailability.start_datetime <= end_of_day,
+                EngineerUnavailability.end_datetime >= start_of_day
+            )
+        )
+        unavailability_entries = unavailability_result.scalars().all()
+        
+        unavailable_slots = []
+        for entry in unavailability_entries:
+            entry_start = max(entry.start_datetime, start_of_day)
+            entry_end = min(entry.end_datetime, end_of_day)
+            unavailable_slots.append({
+                "id": entry.id,
+                "start_time": entry_start.strftime("%H:%M"),
+                "end_time": entry_end.strftime("%H:%M"),
+                "reason": entry.reason,
+                "is_all_day": entry.is_all_day
+            })
+        
+        engineer_data.append({
+            "engineer_id": engineer.id,
+            "engineer_name": engineer.user.full_name if engineer.user else "Unknown",
+            "calendar_email": engineer.calendar_email,
+            "is_available": engineer.is_available,
+            "is_working": is_working,
+            "working_start": working_start,
+            "working_end": working_end,
+            "day_name": day_names[day_of_week],
+            "booked_slots": booked_slots,
+            "unavailable_slots": unavailable_slots
+        })
+    
+    return {
+        "date": date,
+        "day_name": day_names[day_of_week],
+        "engineers": engineer_data
     }

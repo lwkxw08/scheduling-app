@@ -969,6 +969,13 @@ class ApiService {
     if (notes) params.append('notes', notes);
     return this.request<any>(`/bookings/${bookingId}/status?${params.toString()}`, { method: 'PATCH' });
   }
+
+  async getEngineerAvailabilityView(date: string, engineerId?: number) {
+    const params = new URLSearchParams();
+    params.append('date', date);
+    if (engineerId) params.append('engineer_id', engineerId.toString());
+    return this.request<any>(`/admin/engineer-availability?${params.toString()}`);
+  }
 }
 
 export const api = new ApiService();
