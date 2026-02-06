@@ -4034,6 +4034,94 @@ async def import_all_data(
     }
 
 
+def is_overnight_shift_check(start_time: str, end_time: str) -> bool:
+    """Check if a shift spans midnight (overnight shift)"""
+    start_parts = start_time.split(":")
+    end_parts = end_time.split(":")
+    start_hour = int(start_parts[0])
+    end_hour = int(end_parts[0])
+    start_min = int(start_parts[1]) if len(start_parts) > 1 else 0
+    end_min = int(end_parts[1]) if len(end_parts) > 1 else 0
+    return end_hour < start_hour or (end_hour == start_hour and end_min < start_min)
+
+
+def calculate_roster_for_date(assignment, target_date):
+    """Calculate roster working hours for a specific date."""
+    if not assignment or not assignment.pattern or not assignment.pattern.phases:
+        return None
+    
+    pattern = assignment.pattern
+    phases = sorted(pattern.phases, key=lambda p: p.phase_order)
+    
+    if not phases:
+        return None
+    
+    start_date = assignment.start_date
+    if isinstance(start_date, datetime):
+        start_date = start_date.date()
+    
+    target = target_date.date() if isinstance(target_date, datetime) else target_date
+    
+    if target < start_date:
+        return None
+    
+    if assignment.end_date:
+        end_date = assignment.end_date
+        if isinstance(end_date, datetime):
+            end_date = end_date.date()
+        if target > end_date:
+            return None
+    
+    days_since_start = (target - start_date).days
+    
+    total_pattern_days = 0
+    phase_info = []
+    
+    for phase in phases:
+        phase_cycle_days = phase.days_on + phase.days_off
+        if phase.repeat_weeks:
+            phase_total_days = phase_cycle_days * phase.repeat_weeks
+        else:
+            phase_total_days = phase_cycle_days
+        
+        phase_info.append({
+            'phase': phase,
+            'cycle_days': phase_cycle_days,
+            'total_days': phase_total_days,
+            'start_day': total_pattern_days
+        })
+        total_pattern_days += phase_total_days
+    
+    if total_pattern_days == 0:
+        return None
+    
+    if assignment.is_repeating:
+        day_in_pattern = days_since_start % total_pattern_days
+    else:
+        if days_since_start >= total_pattern_days:
+            return None
+        day_in_pattern = days_since_start
+    
+    current_day = 0
+    for info in phase_info:
+        phase = info['phase']
+        phase_total_days = info['total_days']
+        phase_cycle_days = info['cycle_days']
+        
+        if current_day + phase_total_days > day_in_pattern:
+            day_within_phase = day_in_pattern - current_day
+            day_within_cycle = day_within_phase % phase_cycle_days
+            
+            if day_within_cycle < phase.days_on:
+                return (phase.start_time, phase.end_time, True)
+            else:
+                return (phase.start_time, phase.end_time, False)
+        
+        current_day += phase_total_days
+    
+    return None
+
+
 @router.get("/engineer-availability")
 async def get_engineer_availability_view(
     date: str,
@@ -4057,7 +4145,8 @@ async def get_engineer_availability_view(
     
     query = select(Engineer).options(
         selectinload(Engineer.user),
-        selectinload(Engineer.schedules)
+        selectinload(Engineer.schedules),
+        selectinload(Engineer.roster_assignments).selectinload(EngineerRosterAssignment.pattern).selectinload(RosterPattern.phases)
     )
     if engineer_id:
         query = query.where(Engineer.id == engineer_id)
@@ -4067,34 +4156,81 @@ async def get_engineer_availability_view(
     
     start_of_day = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
     end_of_day = target_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+    previous_date = target_date - timedelta(days=1)
     
     engineer_data = []
     
     for engineer in engineers:
-        schedule = None
-        for s in engineer.schedules:
-            if s.day_of_week == day_of_week:
-                schedule = s
+        working_start = None
+        working_end = None
+        is_working = False
+        overnight_continuation_end = None
+        
+        # Check for active roster assignment first
+        active_roster = None
+        for ra in engineer.roster_assignments:
+            if ra.is_active:
+                active_roster = ra
                 break
         
-        if schedule:
-            if not schedule.is_working:
-                working_start = None
-                working_end = None
-                is_working = False
+        if active_roster:
+            roster_result = calculate_roster_for_date(active_roster, target_date)
+            
+            # Check if previous day had an overnight shift that continues into today
+            prev_roster_result = calculate_roster_for_date(active_roster, previous_date)
+            if prev_roster_result:
+                prev_start_time, prev_end_time, prev_is_working = prev_roster_result
+                if prev_is_working and is_overnight_shift_check(prev_start_time, prev_end_time):
+                    overnight_continuation_end = prev_end_time
+            
+            if roster_result:
+                start_time, end_time, roster_is_working = roster_result
+                if roster_is_working:
+                    working_start = start_time
+                    working_end = end_time
+                    is_working = True
+                else:
+                    # Day off but might have overnight continuation
+                    if overnight_continuation_end:
+                        working_start = "00:00"
+                        working_end = overnight_continuation_end
+                        is_working = True
             else:
-                working_start = schedule.start_time
-                working_end = schedule.end_time
-                is_working = True
+                # Roster doesn't apply - fall back to schedule
+                schedule = None
+                for s in engineer.schedules:
+                    if s.day_of_week == day_of_week:
+                        schedule = s
+                        break
+                
+                if schedule:
+                    if schedule.is_working:
+                        working_start = schedule.start_time
+                        working_end = schedule.end_time
+                        is_working = True
+                else:
+                    if day_of_week < 5:
+                        working_start = engineer.working_hours_start
+                        working_end = engineer.working_hours_end
+                        is_working = True
         else:
-            if day_of_week >= 5:
-                working_start = None
-                working_end = None
-                is_working = False
+            # No roster - use schedule
+            schedule = None
+            for s in engineer.schedules:
+                if s.day_of_week == day_of_week:
+                    schedule = s
+                    break
+            
+            if schedule:
+                if schedule.is_working:
+                    working_start = schedule.start_time
+                    working_end = schedule.end_time
+                    is_working = True
             else:
-                working_start = engineer.working_hours_start
-                working_end = engineer.working_hours_end
-                is_working = True
+                if day_of_week < 5:
+                    working_start = engineer.working_hours_start
+                    working_end = engineer.working_hours_end
+                    is_working = True
         
         bookings_result = await db.execute(
             select(Booking).where(
@@ -4154,6 +4290,7 @@ async def get_engineer_availability_view(
             "is_working": is_working,
             "working_start": working_start,
             "working_end": working_end,
+            "overnight_continuation_end": overnight_continuation_end,
             "day_name": day_names[day_of_week],
             "booked_slots": booked_slots,
             "unavailable_slots": unavailable_slots

@@ -22,6 +22,34 @@ def generate_time_slots(
 ) -> List[dict]:
     slots = []
     current = datetime.now().replace(hour=start_hour, minute=start_minute, second=0, microsecond=0)
+    
+    # Handle overnight shifts (e.g., 19:00 to 07:00)
+    if end_hour < start_hour or (end_hour == start_hour and end_minute < start_minute):
+        # For overnight shifts, generate slots from start_time to midnight (23:59)
+        end = datetime.now().replace(hour=23, minute=59, second=0, microsecond=0)
+    else:
+        end = datetime.now().replace(hour=end_hour, minute=end_minute, second=0, microsecond=0)
+    
+    while current + timedelta(minutes=slot_duration_minutes) <= end:
+        slot_end = current + timedelta(minutes=slot_duration_minutes)
+        slots.append({
+            "start_time": current.strftime("%H:%M"),
+            "end_time": slot_end.strftime("%H:%M"),
+            "is_available": True
+        })
+        current = slot_end
+    
+    return slots
+
+
+def generate_overnight_continuation_slots(
+    end_hour: int,
+    end_minute: int,
+    slot_duration_minutes: int = 60
+) -> List[dict]:
+    """Generate slots from midnight to end_time for overnight shift continuation"""
+    slots = []
+    current = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
     end = datetime.now().replace(hour=end_hour, minute=end_minute, second=0, microsecond=0)
     
     while current + timedelta(minutes=slot_duration_minutes) <= end:
@@ -34,6 +62,13 @@ def generate_time_slots(
         current = slot_end
     
     return slots
+
+
+def is_overnight_shift(start_time: str, end_time: str) -> bool:
+    """Check if a shift spans midnight (overnight shift)"""
+    start_hour, start_min = parse_time(start_time)
+    end_hour, end_min = parse_time(end_time)
+    return end_hour < start_hour or (end_hour == start_hour and end_min < start_min)
 
 
 def check_slot_overlap(
@@ -257,11 +292,46 @@ async def get_engineer_availability(
     
     roster_assignment = await get_engineer_roster_assignment(db, engineer.id)
     
+    # Track if we need to add overnight continuation slots from previous day
+    overnight_continuation_end_hour = None
+    overnight_continuation_end_min = None
+    
     if roster_assignment:
         roster_result = calculate_roster_working_hours(roster_assignment, target_date)
+        
+        # Check if previous day had an overnight shift that continues into today
+        previous_date = target_date - timedelta(days=1)
+        prev_roster_result = calculate_roster_working_hours(roster_assignment, previous_date)
+        if prev_roster_result:
+            prev_start_time, prev_end_time, prev_is_working = prev_roster_result
+            if prev_is_working and is_overnight_shift(prev_start_time, prev_end_time):
+                # Previous day had an overnight shift - add continuation slots for today
+                overnight_continuation_end_hour, overnight_continuation_end_min = parse_time(prev_end_time)
+        
         if roster_result:
             start_time, end_time, is_working = roster_result
             if not is_working:
+                # Even if today is a day off, check if previous day's overnight shift continues
+                if overnight_continuation_end_hour is not None:
+                    # Generate only the overnight continuation slots
+                    slot_duration = int(duration_hours * 60)
+                    slots = generate_overnight_continuation_slots(overnight_continuation_end_hour, overnight_continuation_end_min, slot_duration)
+                    
+                    unavailability_entries = await get_engineer_unavailability_for_date(db, engineer.id, target_date)
+                    for slot in slots:
+                        if check_slot_unavailability(slot["start_time"], slot["end_time"], unavailability_entries, target_date):
+                            slot["is_available"] = False
+                            slot["unavailable_reason"] = "manual"
+                    
+                    return {
+                        "engineer_id": engineer.id,
+                        "engineer_name": engineer.user.full_name if engineer.user else "Unknown",
+                        "calendar_email": engineer.calendar_email,
+                        "slots": slots,
+                        "overnight_continuation": True,
+                        "day_name": day_names[day_of_week]
+                    }
+                
                 return {
                     "engineer_id": engineer.id,
                     "engineer_name": engineer.user.full_name if engineer.user else "Unknown",
@@ -370,6 +440,12 @@ async def get_engineer_availability(
     
     slot_duration = int(duration_hours * 60)
     slots = generate_time_slots(start_hour, start_min, end_hour, end_min, slot_duration)
+    
+    # Add overnight continuation slots from previous day if applicable
+    if overnight_continuation_end_hour is not None:
+        continuation_slots = generate_overnight_continuation_slots(overnight_continuation_end_hour, overnight_continuation_end_min, slot_duration)
+        # Prepend continuation slots (they come before the current day's slots)
+        slots = continuation_slots + slots
     
     # Check manual unavailability entries FIRST (they override Outlook calendar)
     unavailability_entries = await get_engineer_unavailability_for_date(db, engineer.id, target_date)

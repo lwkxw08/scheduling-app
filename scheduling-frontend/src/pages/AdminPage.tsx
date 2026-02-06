@@ -2051,23 +2051,43 @@ export default function AdminPage() {
                         </div>
 
                         {availabilityViewData.engineers?.map((eng: any) => {
-                          const workingStartHour = eng.working_start ? parseInt(eng.working_start.split(':')[0]) : 9;
-                          const workingEndHour = eng.working_end ? parseInt(eng.working_end.split(':')[0]) : 17;
-                          const isOvernightShift = workingEndHour < workingStartHour;
+                          const workingStartHour = eng.working_start ? parseInt(eng.working_start.split(':')[0]) : null;
+                          const workingEndHour = eng.working_end ? parseInt(eng.working_end.split(':')[0]) : null;
+                          const isOvernightShift = workingStartHour !== null && workingEndHour !== null && workingEndHour < workingStartHour;
+                          const overnightContinuationEndHour = eng.overnight_continuation_end ? parseInt(eng.overnight_continuation_end.split(':')[0]) : null;
                           
                           return (
                             <div key={eng.engineer_id} className="flex items-center py-2 border-b border-gray-100">
                               <div className="w-40 flex-shrink-0">
                                 <div className="font-medium text-sm">{eng.engineer_name}</div>
                                 <div className="text-xs text-gray-500">
-                                  {eng.is_working ? `${eng.working_start} - ${eng.working_end}` : 'Not working'}
+                                  {eng.is_working ? `${eng.working_start} - ${eng.working_end}` : (overnightContinuationEndHour ? `00:00 - ${eng.overnight_continuation_end}` : 'Not working')}
                                 </div>
                               </div>
                               <div className="flex-1 flex h-10 relative">
                                 {Array.from({ length: 24 }, (_, i) => i).map((hour) => {
-                                  const isWorkingHour = eng.is_working && (isOvernightShift 
-                                    ? (hour >= workingStartHour || hour < workingEndHour)
-                                    : (hour >= workingStartHour && hour < workingEndHour));
+                                  // Check if this hour is a working hour
+                                  let isWorkingHour = false;
+                                  
+                                  // Check overnight continuation from previous day (00:00 to continuation end)
+                                  if (overnightContinuationEndHour !== null && hour < overnightContinuationEndHour) {
+                                    isWorkingHour = true;
+                                  }
+                                  
+                                  // Check current day's shift
+                                  if (eng.is_working && workingStartHour !== null && workingEndHour !== null) {
+                                    if (isOvernightShift) {
+                                      // Overnight shift: working from start hour to midnight
+                                      if (hour >= workingStartHour) {
+                                        isWorkingHour = true;
+                                      }
+                                    } else {
+                                      // Normal shift
+                                      if (hour >= workingStartHour && hour < workingEndHour) {
+                                        isWorkingHour = true;
+                                      }
+                                    }
+                                  }
                                   
                                   const bookedSlot = eng.booked_slots?.find((slot: any) => {
                                     const slotStartHour = parseInt(slot.start_time.split(':')[0]);
