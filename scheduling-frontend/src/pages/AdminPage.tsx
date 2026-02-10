@@ -3684,6 +3684,7 @@ export default function AdminPage() {
                                                                 <SelectItem value="in_progress">In Progress</SelectItem>
                                                                 <SelectItem value="completed">Completed</SelectItem>
                                                                 <SelectItem value="cancelled">Cancelled</SelectItem>
+                                                                <SelectItem value="rejected">Rejected</SelectItem>
                                                               </SelectContent>
                                                             </Select>
                               <p className="text-xs text-gray-500">
