@@ -15,7 +15,9 @@ import { Calendar, ArrowLeft, Clock, User, Check, Paperclip, Upload, Loader2, Al
 
 export default function BookingPage() {
   const navigate = useNavigate();
-  useAuth();
+  const { user } = useAuth();
+  
+  const isBooker = user?.role === 'user';
   
   const [step, setStep] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
@@ -625,15 +627,19 @@ export default function BookingPage() {
                 </div>
               ) : (
                 <div className="space-y-6">
-                  {availability.map((engineer) => (
+                  {availability.map((engineer, index) => (
                     <div key={engineer.engineer_id} className="border rounded-lg p-4">
                       <div className="flex items-center mb-4">
                         <div className="w-10 h-10 bg-indigo-100 rounded-full flex items-center justify-center mr-3">
                           <User className="w-5 h-5 text-indigo-600" />
                         </div>
                         <div>
-                          <h4 className="font-medium text-gray-900">{engineer.engineer_name}</h4>
-                          <p className="text-sm text-gray-500">{engineer.calendar_email}</p>
+                          <h4 className="font-medium text-gray-900">
+                            {isBooker ? `Engineer ${index + 1}` : engineer.engineer_name}
+                          </h4>
+                          {!isBooker && (
+                            <p className="text-sm text-gray-500">{engineer.calendar_email}</p>
+                          )}
                         </div>
                       </div>
                       <div className="grid grid-cols-4 gap-2">

@@ -11,7 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../co
 import { Badge } from '../components/ui/badge';
 import { Checkbox } from '../components/ui/checkbox';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
-import { Calendar, ArrowLeft, Clock, User, AlertTriangle, Edit, Trash2, XCircle, Loader2, AlertCircle, UserCog } from 'lucide-react';
+import { Calendar, ArrowLeft, Clock, User, AlertTriangle, Edit, Trash2, XCircle, Loader2, AlertCircle, UserCog, Paperclip, Upload, Download, X } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 
 // Status Change Section Component
@@ -26,8 +26,8 @@ function StatusChangeSection({ booking, isAdmin, onStatusChanged }: {
   const [error, setError] = useState('');
 
   const statusOptions: string[] = isAdmin 
-    ? ['pending', 'confirmed', 'completed', 'delayed']
-    : ['delayed'];
+    ? ['pending', 'confirmed', 'completed', 'delayed', 'rejected']
+    : ['delayed', 'rejected'];
 
   const handleStatusChange = async () => {
     if (selectedStatus === booking.status && !statusNotes) return;
@@ -61,6 +61,7 @@ function StatusChangeSection({ booking, isAdmin, onStatusChanged }: {
           booking.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
           booking.status === 'completed' ? 'bg-blue-100 text-blue-800' :
           booking.status === 'delayed' ? 'bg-orange-100 text-orange-800' :
+          booking.status === 'rejected' ? 'bg-purple-100 text-purple-800' :
           'bg-gray-100 text-gray-800'
         }>
           {booking.status}
@@ -161,11 +162,23 @@ export default function BookingDetailPage() {
     const [isReassigning, setIsReassigning] = useState(false);
     const [isLoadingEngineers, setIsLoadingEngineers] = useState(false);
   
+    // Attachments state (admin only)
+    const [attachments, setAttachments] = useState<any[]>([]);
+    const [isLoadingAttachments, setIsLoadingAttachments] = useState(false);
+    const [isUploadingAttachment, setIsUploadingAttachment] = useState(false);
+    const [isDeletingAttachment, setIsDeletingAttachment] = useState<number | null>(null);
+  
     const isAdmin = user?.role === 'admin';
 
   useEffect(() => {
     loadBooking();
   }, [id]);
+
+  useEffect(() => {
+    if (booking && isAdmin) {
+      loadAttachments();
+    }
+  }, [booking?.id, isAdmin]);
 
   const loadBooking = async () => {
     try {
@@ -175,6 +188,50 @@ export default function BookingDetailPage() {
       setError(err.message || 'Failed to load booking');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const loadAttachments = async () => {
+    if (!booking) return;
+    setIsLoadingAttachments(true);
+    try {
+      const data = await api.getBookingAttachments(booking.id);
+      setAttachments(data as any[]);
+    } catch (err: any) {
+      console.error('Failed to load attachments:', err);
+    } finally {
+      setIsLoadingAttachments(false);
+    }
+  };
+
+  const handleUploadAttachment = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!booking || !e.target.files || e.target.files.length === 0) return;
+    
+    const file = e.target.files[0];
+    setIsUploadingAttachment(true);
+    
+    try {
+      await api.addBookingAttachment(booking.id, file);
+      await loadAttachments();
+    } catch (err: any) {
+      setError(err.message || 'Failed to upload attachment');
+    } finally {
+      setIsUploadingAttachment(false);
+      e.target.value = '';
+    }
+  };
+
+  const handleDeleteAttachment = async (attachmentId: number) => {
+    if (!booking) return;
+    
+    setIsDeletingAttachment(attachmentId);
+    try {
+      await api.deleteBookingAttachment(booking.id, attachmentId);
+      await loadAttachments();
+    } catch (err: any) {
+      setError(err.message || 'Failed to delete attachment');
+    } finally {
+      setIsDeletingAttachment(null);
     }
   };
 
@@ -818,6 +875,101 @@ export default function BookingDetailPage() {
               )}
             </CardContent>
           </Card>
+
+          {isAdmin && (
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between">
+                <div>
+                  <CardTitle>Attachments</CardTitle>
+                  <CardDescription>
+                    Files attached to this booking
+                  </CardDescription>
+                </div>
+                <div>
+                  <input
+                    type="file"
+                    id="attachment-upload"
+                    className="hidden"
+                    onChange={handleUploadAttachment}
+                    disabled={isUploadingAttachment}
+                  />
+                  <label htmlFor="attachment-upload">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={isUploadingAttachment}
+                      asChild
+                    >
+                      <span>
+                        {isUploadingAttachment ? (
+                          <>
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            Uploading...
+                          </>
+                        ) : (
+                          <>
+                            <Upload className="w-4 h-4 mr-2" />
+                            Upload File
+                          </>
+                        )}
+                      </span>
+                    </Button>
+                  </label>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {isLoadingAttachments ? (
+                  <div className="flex justify-center py-4">
+                    <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+                  </div>
+                ) : attachments.length > 0 ? (
+                  <div className="space-y-2">
+                    {attachments.map((attachment) => (
+                      <div
+                        key={attachment.id}
+                        className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
+                      >
+                        <div className="flex items-center">
+                          <Paperclip className="w-4 h-4 text-gray-400 mr-3" />
+                          <div>
+                            <p className="font-medium text-sm">{attachment.original_filename}</p>
+                            <p className="text-xs text-gray-500">
+                              Uploaded {new Date(attachment.uploaded_at).toLocaleDateString()}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <a
+                            href={api.getBookingAttachmentUrl(attachment.stored_filename)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-indigo-600 hover:text-indigo-800"
+                          >
+                            <Download className="w-4 h-4" />
+                          </a>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleDeleteAttachment(attachment.id)}
+                            disabled={isDeletingAttachment === attachment.id}
+                            className="text-red-600 hover:text-red-800 hover:bg-red-50"
+                          >
+                            {isDeletingAttachment === attachment.id ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <X className="w-4 h-4" />
+                            )}
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-gray-400 text-sm">No attachments</p>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           {canModify && (
             <Card className="border-red-200">

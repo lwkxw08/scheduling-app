@@ -75,7 +75,7 @@ export interface Booking {
   change_type_id: number;
   scheduled_date: string;
   duration_hours: number;
-  status: 'pending' | 'confirmed' | 'cancelled' | 'completed' | 'delayed';
+  status: 'pending' | 'confirmed' | 'cancelled' | 'completed' | 'delayed' | 'rejected';
   custom_fields_data: Record<string, any> | null;
   notes: string | null;
   additional_emails: string[] | null;

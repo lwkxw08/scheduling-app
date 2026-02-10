@@ -19,7 +19,7 @@ from app.models.database_models import (
     ExpediteRequest, ExpediteRequestStatus, EngineerUnavailability, BookingStatusUpdate,
     FeeProductAssignment, FeeChangeTypeAssignment, FeeApplyMode, BookingFee, BookingFeeStatus,
     EmailRule, EmailRuleSentLog, EmailRuleTriggerType, EmailRuleRecipientType,
-    BankHoliday
+    BankHoliday, BookingAttachment
 )
 from app.schemas.schemas import (
     ProductCreate, ProductUpdate, ProductResponse, ChangeTypeCreate, ChangeTypeResponse,
@@ -556,6 +556,58 @@ async def remove_engineer_skill(
     await db.delete(skill)
     await db.commit()
     return {"message": "Skill removed successfully"}
+
+
+@router.post("/engineers/{engineer_id}/clone-skills/{source_engineer_id}")
+async def clone_engineer_skills(
+    engineer_id: int,
+    source_engineer_id: int,
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """Clone all skills from one engineer to another"""
+    await get_admin_user(authorization, db)
+    
+    # Verify target engineer exists
+    result = await db.execute(select(Engineer).where(Engineer.id == engineer_id))
+    target_engineer = result.scalar_one_or_none()
+    if not target_engineer:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target engineer not found")
+    
+    # Verify source engineer exists
+    result = await db.execute(select(Engineer).where(Engineer.id == source_engineer_id))
+    source_engineer = result.scalar_one_or_none()
+    if not source_engineer:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Source engineer not found")
+    
+    # Get source engineer's skills
+    result = await db.execute(
+        select(EngineerSkill).where(EngineerSkill.engineer_id == source_engineer_id)
+    )
+    source_skills = result.scalars().all()
+    
+    # Get existing skills for target engineer to avoid duplicates
+    result = await db.execute(
+        select(EngineerSkill).where(EngineerSkill.engineer_id == engineer_id)
+    )
+    existing_skills = result.scalars().all()
+    existing_skill_keys = {(s.product_id, s.change_type_id) for s in existing_skills}
+    
+    # Clone skills that don't already exist
+    cloned_count = 0
+    for skill in source_skills:
+        if (skill.product_id, skill.change_type_id) not in existing_skill_keys:
+            new_skill = EngineerSkill(
+                engineer_id=engineer_id,
+                product_id=skill.product_id,
+                change_type_id=skill.change_type_id,
+                proficiency_level=skill.proficiency_level
+            )
+            db.add(new_skill)
+            cloned_count += 1
+    
+    await db.commit()
+    return {"message": f"Successfully cloned {cloned_count} skills from engineer {source_engineer_id} to engineer {engineer_id}"}
 
 
 @router.post("/custom-fields", response_model=CustomFieldResponse)
@@ -3240,6 +3292,146 @@ async def permanently_delete_booking(
     await db.commit()
     
     return {"message": f"Booking {booking_id} permanently deleted"}
+
+
+# Booking Attachments Endpoints
+@router.get("/bookings/{booking_id}/attachments")
+async def get_booking_attachments(
+    booking_id: int,
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get all attachments for a booking"""
+    await get_admin_user(authorization, db)
+    
+    result = await db.execute(select(Booking).where(Booking.id == booking_id))
+    booking = result.scalar_one_or_none()
+    if not booking:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
+    
+    result = await db.execute(
+        select(BookingAttachment)
+        .where(BookingAttachment.booking_id == booking_id)
+        .options(selectinload(BookingAttachment.uploaded_by))
+    )
+    attachments = result.scalars().all()
+    
+    return [
+        {
+            "id": a.id,
+            "booking_id": a.booking_id,
+            "filename": a.filename,
+            "file_url": a.file_url,
+            "file_size": a.file_size,
+            "content_type": a.content_type,
+            "uploaded_by": a.uploaded_by.email if a.uploaded_by else None,
+            "created_at": a.created_at.isoformat() if a.created_at else None
+        }
+        for a in attachments
+    ]
+
+
+@router.post("/bookings/{booking_id}/attachments")
+async def add_booking_attachment(
+    booking_id: int,
+    file: UploadFile = File(...),
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """Add an attachment to a booking"""
+    admin_user = await get_admin_user(authorization, db)
+    
+    result = await db.execute(select(Booking).where(Booking.id == booking_id))
+    booking = result.scalar_one_or_none()
+    if not booking:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
+    
+    # Create uploads directory if it doesn't exist
+    upload_dir = "/data/uploads/booking_attachments" if os.path.exists("/data") else "uploads/booking_attachments"
+    os.makedirs(upload_dir, exist_ok=True)
+    
+    # Generate unique filename
+    file_ext = os.path.splitext(file.filename)[1] if file.filename else ""
+    unique_filename = f"{uuid.uuid4()}{file_ext}"
+    file_path = os.path.join(upload_dir, unique_filename)
+    
+    # Save the file
+    content = await file.read()
+    async with aiofiles.open(file_path, 'wb') as f:
+        await f.write(content)
+    
+    # Create attachment record
+    attachment = BookingAttachment(
+        booking_id=booking_id,
+        filename=file.filename or unique_filename,
+        file_url=f"/admin/booking-attachments/{unique_filename}",
+        file_size=len(content),
+        content_type=file.content_type,
+        uploaded_by_id=admin_user.id
+    )
+    db.add(attachment)
+    await db.commit()
+    await db.refresh(attachment)
+    
+    return {
+        "id": attachment.id,
+        "booking_id": attachment.booking_id,
+        "filename": attachment.filename,
+        "file_url": attachment.file_url,
+        "file_size": attachment.file_size,
+        "content_type": attachment.content_type,
+        "uploaded_by": admin_user.email,
+        "created_at": attachment.created_at.isoformat() if attachment.created_at else None
+    }
+
+
+@router.get("/booking-attachments/{filename}")
+async def get_booking_attachment_file(
+    filename: str,
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """Download a booking attachment file"""
+    await get_admin_user(authorization, db)
+    
+    upload_dir = "/data/uploads/booking_attachments" if os.path.exists("/data") else "uploads/booking_attachments"
+    file_path = os.path.join(upload_dir, filename)
+    
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
+    
+    return FileResponse(file_path)
+
+
+@router.delete("/bookings/{booking_id}/attachments/{attachment_id}")
+async def delete_booking_attachment(
+    booking_id: int,
+    attachment_id: int,
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """Delete a booking attachment"""
+    await get_admin_user(authorization, db)
+    
+    result = await db.execute(
+        select(BookingAttachment)
+        .where(BookingAttachment.id == attachment_id, BookingAttachment.booking_id == booking_id)
+    )
+    attachment = result.scalar_one_or_none()
+    if not attachment:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attachment not found")
+    
+    # Delete the file
+    upload_dir = "/data/uploads/booking_attachments" if os.path.exists("/data") else "uploads/booking_attachments"
+    filename = attachment.file_url.split("/")[-1]
+    file_path = os.path.join(upload_dir, filename)
+    if os.path.exists(file_path):
+        os.remove(file_path)
+    
+    await db.delete(attachment)
+    await db.commit()
+    
+    return {"message": "Attachment deleted successfully"}
 
 
 # Bank Holiday Management Endpoints

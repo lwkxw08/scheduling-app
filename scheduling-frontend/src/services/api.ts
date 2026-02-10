@@ -158,6 +158,12 @@ class ApiService {
     return this.request(`/admin/engineers/${engineerId}/skills/${skillId}`, { method: 'DELETE' });
   }
 
+  async cloneEngineerSkills(targetEngineerId: number, sourceEngineerId: number) {
+    return this.request(`/admin/engineers/${targetEngineerId}/clone-skills/${sourceEngineerId}`, {
+      method: 'POST',
+    });
+  }
+
   async getCustomFields() {
     return this.request('/admin/custom-fields');
   }
@@ -975,6 +981,39 @@ class ApiService {
     params.append('date', date);
     if (engineerId) params.append('engineer_id', engineerId.toString());
     return this.request<any>(`/admin/engineer-availability?${params.toString()}`);
+  }
+
+  async getBookingAttachments(bookingId: number) {
+    return this.request<any[]>(`/admin/bookings/${bookingId}/attachments`);
+  }
+
+  async addBookingAttachment(bookingId: number, file: File) {
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    const token = localStorage.getItem('token');
+    const response = await fetch(`${API_URL}/admin/bookings/${bookingId}/attachments`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+      },
+      body: formData,
+    });
+    
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'An error occurred' }));
+      throw new Error(error.detail || 'An error occurred');
+    }
+    
+    return response.json();
+  }
+
+  async deleteBookingAttachment(bookingId: number, attachmentId: number) {
+    return this.request(`/admin/bookings/${bookingId}/attachments/${attachmentId}`, { method: 'DELETE' });
+  }
+
+  getBookingAttachmentUrl(filename: string) {
+    return `${API_URL}/admin/booking-attachments/${filename}`;
   }
 }
 

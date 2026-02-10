@@ -18,6 +18,7 @@ class BookingStatus(str, enum.Enum):
     CANCELLED = "cancelled"
     COMPLETED = "completed"
     DELAYED = "delayed"
+    REJECTED = "rejected"
 
 
 class ExpediteRequestStatus(str, enum.Enum):
@@ -179,6 +180,24 @@ class Booking(Base):
     change_type = relationship("ChangeType", back_populates="bookings")
     status_updates = relationship("BookingStatusUpdate", back_populates="booking", cascade="all, delete-orphan")
     fees = relationship("BookingFee", back_populates="booking", cascade="all, delete-orphan")
+    attachments = relationship("BookingAttachment", back_populates="booking", cascade="all, delete-orphan")
+
+
+class BookingAttachment(Base):
+    """Attachments added to bookings by admin"""
+    __tablename__ = "booking_attachments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    booking_id = Column(Integer, ForeignKey("bookings.id"), nullable=False)
+    filename = Column(String(255), nullable=False)
+    file_url = Column(String(1000), nullable=False)
+    file_size = Column(Integer, nullable=True)
+    content_type = Column(String(100), nullable=True)
+    uploaded_by_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    booking = relationship("Booking", back_populates="attachments")
+    uploaded_by = relationship("User")
 
 
 class SystemConfig(Base):

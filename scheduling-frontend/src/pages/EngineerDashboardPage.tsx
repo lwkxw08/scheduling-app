@@ -24,6 +24,12 @@ export default function EngineerDashboardPage() {
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('bookings');
   const [showUpcomingOnly, setShowUpcomingOnly] = useState(true);
+  
+  // Gantt chart state
+  const [ganttDate, setGanttDate] = useState(() => {
+    const today = new Date();
+    return today.toISOString().split('T')[0];
+  });
 
   // Status update dialog
   const [statusDialogOpen, setStatusDialogOpen] = useState(false);
@@ -305,6 +311,7 @@ export default function EngineerDashboardPage() {
           <TabsList className="mb-6">
             <TabsTrigger value="bookings">My Bookings</TabsTrigger>
             <TabsTrigger value="unavailability">My Unavailability</TabsTrigger>
+            <TabsTrigger value="calendar">Calendar View</TabsTrigger>
           </TabsList>
 
           <TabsContent value="bookings">
@@ -448,6 +455,180 @@ export default function EngineerDashboardPage() {
                     ))}
                   </div>
                 )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="calendar">
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>Calendar View</CardTitle>
+                    <CardDescription>View your daily schedule at a glance</CardDescription>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        const date = new Date(ganttDate);
+                        date.setDate(date.getDate() - 1);
+                        setGanttDate(date.toISOString().split('T')[0]);
+                      }}
+                    >
+                      Previous Day
+                    </Button>
+                    <Input
+                      type="date"
+                      value={ganttDate}
+                      onChange={(e) => setGanttDate(e.target.value)}
+                      className="w-40"
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        const date = new Date(ganttDate);
+                        date.setDate(date.getDate() + 1);
+                        setGanttDate(date.toISOString().split('T')[0]);
+                      }}
+                    >
+                      Next Day
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setGanttDate(new Date().toISOString().split('T')[0])}
+                    >
+                      Today
+                    </Button>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="border rounded-lg overflow-hidden">
+                  <div className="flex">
+                    <div className="w-32 flex-shrink-0 bg-gray-50 border-r p-2 font-medium text-sm">
+                      {formatDate(ganttDate)}
+                    </div>
+                    <div className="flex-1 overflow-x-auto">
+                      <div className="flex min-w-[1200px]">
+                        {Array.from({ length: 24 }, (_, i) => (
+                          <div
+                            key={i}
+                            className="flex-1 text-center text-xs text-gray-500 border-r py-1"
+                            style={{ minWidth: '50px' }}
+                          >
+                            {i.toString().padStart(2, '0')}:00
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex border-t">
+                    <div className="w-32 flex-shrink-0 bg-gray-50 border-r p-2 text-sm text-gray-600">
+                      My Schedule
+                    </div>
+                    <div className="flex-1 relative h-16 overflow-x-auto">
+                      <div className="absolute inset-0 flex min-w-[1200px]">
+                        {Array.from({ length: 24 }, (_, i) => (
+                          <div
+                            key={i}
+                            className="flex-1 border-r border-gray-100"
+                            style={{ minWidth: '50px' }}
+                          />
+                        ))}
+                      </div>
+                      {bookings
+                        .filter((booking) => {
+                          const bookingDate = new Date(booking.scheduled_date).toISOString().split('T')[0];
+                          return bookingDate === ganttDate && booking.status !== 'cancelled';
+                        })
+                        .map((booking) => {
+                          const startDate = new Date(booking.scheduled_date);
+                          const startHour = startDate.getHours() + startDate.getMinutes() / 60;
+                          const duration = booking.duration_hours;
+                          const left = (startHour / 24) * 100;
+                          const width = (duration / 24) * 100;
+                          return (
+                            <div
+                              key={booking.id}
+                              className="absolute top-1 h-14 bg-blue-500 text-white text-xs rounded px-1 overflow-hidden cursor-pointer hover:bg-blue-600 transition-colors"
+                              style={{
+                                left: `${left}%`,
+                                width: `${width}%`,
+                                minWidth: '60px',
+                              }}
+                              title={`${booking.order_reference} - ${booking.customer_name}`}
+                              onClick={() => navigate(`/booking/${booking.id}`)}
+                            >
+                              <div className="font-medium truncate">{booking.order_reference}</div>
+                              <div className="truncate opacity-80">{booking.customer_name}</div>
+                              <div className="truncate opacity-80">
+                                {formatTime(booking.scheduled_date)} ({booking.duration_hours}h)
+                              </div>
+                            </div>
+                          );
+                        })}
+                      {unavailability
+                        .filter((entry) => {
+                          const startDate = new Date(entry.start_datetime).toISOString().split('T')[0];
+                          const endDate = new Date(entry.end_datetime).toISOString().split('T')[0];
+                          return startDate <= ganttDate && endDate >= ganttDate;
+                        })
+                        .map((entry) => {
+                          const entryStartDate = new Date(entry.start_datetime);
+                          const entryEndDate = new Date(entry.end_datetime);
+                          
+                          let startHour = 0;
+                          let endHour = 24;
+                          
+                          if (entryStartDate.toISOString().split('T')[0] === ganttDate) {
+                            startHour = entryStartDate.getHours() + entryStartDate.getMinutes() / 60;
+                          }
+                          if (entryEndDate.toISOString().split('T')[0] === ganttDate) {
+                            endHour = entryEndDate.getHours() + entryEndDate.getMinutes() / 60;
+                          }
+                          
+                          if (entry.is_all_day) {
+                            startHour = 0;
+                            endHour = 24;
+                          }
+                          
+                          const duration = endHour - startHour;
+                          const left = (startHour / 24) * 100;
+                          const width = (duration / 24) * 100;
+                          
+                          return (
+                            <div
+                              key={`unavail-${entry.id}`}
+                              className="absolute top-1 h-14 bg-red-200 text-red-800 text-xs rounded px-1 overflow-hidden border border-red-300"
+                              style={{
+                                left: `${left}%`,
+                                width: `${width}%`,
+                                minWidth: '40px',
+                              }}
+                              title={entry.reason || 'Unavailable'}
+                            >
+                              <div className="font-medium truncate">Unavailable</div>
+                              <div className="truncate opacity-80">{entry.reason || 'No reason specified'}</div>
+                            </div>
+                          );
+                        })}
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-4 flex items-center space-x-4 text-sm">
+                  <div className="flex items-center">
+                    <div className="w-4 h-4 bg-blue-500 rounded mr-2"></div>
+                    <span>Bookings</span>
+                  </div>
+                  <div className="flex items-center">
+                    <div className="w-4 h-4 bg-red-200 border border-red-300 rounded mr-2"></div>
+                    <span>Unavailable</span>
+                  </div>
+                </div>
               </CardContent>
             </Card>
           </TabsContent>

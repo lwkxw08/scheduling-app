@@ -11,7 +11,7 @@ import { Label } from '../components/ui/label';
 import { Input } from '../components/ui/input';
 import { Badge } from '../components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
-import { ArrowLeft, Plus, Trash2, User, Clock, Calendar, CalendarDays } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, User, Clock, Calendar, CalendarDays, Copy } from 'lucide-react';
 
 interface EngineerSchedule {
   id?: number;
@@ -52,6 +52,10 @@ export default function EngineerSkillsPage() {
   const [rosterEndDate, setRosterEndDate] = useState('');
   const [rosterIsRepeating, setRosterIsRepeating] = useState(true);
 
+  const [showCloneDialog, setShowCloneDialog] = useState(false);
+  const [sourceEngineerId, setSourceEngineerId] = useState<number | null>(null);
+  const [allEngineers, setAllEngineers] = useState<Engineer[]>([]);
+
   useEffect(() => {
     if (user?.role !== 'admin') {
       navigate('/dashboard');
@@ -74,6 +78,7 @@ export default function EngineerSkillsPage() {
       ]);
       
       const engineers = engineersData as Engineer[];
+      setAllEngineers(engineers);
       const foundEngineer = engineers.find(e => e.id === parseInt(id!));
       setEngineer(foundEngineer || null);
       setSkills(skillsData as EngineerSkill[]);
@@ -123,6 +128,19 @@ export default function EngineerSkillsPage() {
       } catch (err: any) {
         setError(err.message);
       }
+    }
+  };
+
+  const handleCloneSkills = async () => {
+    if (!sourceEngineerId) return;
+    
+    try {
+      await api.cloneEngineerSkills(parseInt(id!), sourceEngineerId);
+      setShowCloneDialog(false);
+      setSourceEngineerId(null);
+      loadData();
+    } catch (err: any) {
+      setError(err.message);
     }
   };
 
@@ -277,13 +295,59 @@ export default function EngineerSkillsPage() {
                 Define which products and change types this engineer can handle
               </CardDescription>
             </div>
-            <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
-              <DialogTrigger asChild>
-                <Button>
-                  <Plus className="w-4 h-4 mr-2" />
-                  Add Skill
-                </Button>
-              </DialogTrigger>
+            <div className="flex space-x-2">
+              <Dialog open={showCloneDialog} onOpenChange={setShowCloneDialog}>
+                <DialogTrigger asChild>
+                  <Button variant="outline">
+                    <Copy className="w-4 h-4 mr-2" />
+                    Clone Skills
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Clone Skills from Another Engineer</DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label>Select Engineer to Clone From</Label>
+                      <Select
+                        value={sourceEngineerId?.toString() || ''}
+                        onValueChange={(v) => setSourceEngineerId(parseInt(v))}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select engineer" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {allEngineers
+                            .filter(e => e.id !== parseInt(id!))
+                            .map((e) => (
+                              <SelectItem key={e.id} value={e.id.toString()}>
+                                {e.user?.full_name || e.calendar_email}
+                              </SelectItem>
+                            ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <p className="text-sm text-gray-500">
+                      This will copy all skills from the selected engineer to this engineer. 
+                      Existing skills will not be duplicated.
+                    </p>
+                  </div>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setShowCloneDialog(false)}>Cancel</Button>
+                    <Button onClick={handleCloneSkills} disabled={!sourceEngineerId}>
+                      Clone Skills
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+              <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
+                <DialogTrigger asChild>
+                  <Button>
+                    <Plus className="w-4 h-4 mr-2" />
+                    Add Skill
+                  </Button>
+                </DialogTrigger>
               <DialogContent>
                 <DialogHeader>
                   <DialogTitle>Add Skill</DialogTitle>
@@ -352,6 +416,7 @@ export default function EngineerSkillsPage() {
                 </DialogFooter>
               </DialogContent>
             </Dialog>
+            </div>
           </CardHeader>
           <CardContent>
             {skills.length === 0 ? (
